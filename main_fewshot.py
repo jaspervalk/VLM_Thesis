@@ -26,6 +26,11 @@ FrozenDict = Any
 
 BREEDS_TASKS = ("living17", "entity13", "entity30", "nonliving26")
 
+def seed_worker(worker_id):
+    worker_seed = torch.initial_seed() % 2**32
+    np.random.seed(worker_seed)
+
+
 
 def parseargs():
     parser = argparse.ArgumentParser()
@@ -104,7 +109,7 @@ def parseargs():
         type=str,
         nargs="+",
         choices=["ridge", "knn", "tip"],
-        default="ridge",
+        default=["ridge"],
         help="Few shot model.",
     )
     aa(
@@ -179,7 +184,7 @@ def parseargs():
         choices=["glocal", "global", "naive", "naive_bias", "without"],
     )
     # Misc arguments
-    aa("--device", type=str, default="cpu", choices=["cpu", "gpu"])
+    aa("--device", type=str, default="cpu", choices=["cpu", "cuda"])
     aa(
         "--things_embeddings_path",
         type=str,
@@ -245,10 +250,10 @@ def get_features_targets(
     batch_size,
     train,
     ids_subset=None,
-    n_batches=1,  # number of reps
+    n_batches=1,
     shuffle=False,
     device: str = "cpu",
-    embeddings: Optional[Array] = None,
+    embeddings: Optional[np.ndarray] = None,
     superclass_mapping: Optional[Dict] = None,
     sample_per_superclass: bool = False,
 ):
@@ -256,7 +261,7 @@ def get_features_targets(
     dataset_is_embedded = is_embedding_source(source) or embeddings is not None
 
     if dataset_is_embedded:
-        # Load the dataset from an embedding source
+        print(f"Using pre-loaded embeddings for {model_name}")
         dataset = load_dataset(
             name=data_cfg.name,
             data_dir=data_cfg.root,
@@ -264,27 +269,40 @@ def get_features_targets(
             embeddings=embeddings,
         )
     else:
-        complete_model_name = model_name + (
-            "" if model_params is None else ("_" + model_params["variant"])
-        )
-        try:
-            complete_model_name += "_" + model_params["dataset"]
-        except (TypeError, KeyError):
-            pass
-        try:
-            # Try to load the embeddings from disk
-            embeddings_path = os.path.join(
-                data_cfg.embeddings_root, source, complete_model_name, module_type
-            )
-            print(embeddings_path)
-            if data_cfg.name not in ["imagenet"]:
-                # For all other datasets, we can load the embeddings from a single file
-                with open(os.path.join(embeddings_path, "embeddings.pkl"), "rb") as f:
-                    embeddings = pickle.load(f)
-            else:
-                # For imagenet, we need to load the embeddings from individual files
-                embeddings = None
+        complete_model_name = model_name
+        if model_params is not None:
+            variant = model_params.get("variant")
+            dataset = model_params.get("dataset")
+            if variant:
+                complete_model_name += f"_{variant}"
+            if dataset and dataset not in complete_model_name:
+                complete_model_name += f"_{dataset}"
 
+        print(f"Computed model path: {complete_model_name}")
+
+
+        embedding_base = os.path.join(data_cfg.embeddings_root)
+        if source not in embedding_base:
+            embedding_base = os.path.join(embedding_base, source)
+
+        embeddings_path = os.path.join(
+            embedding_base,
+            complete_model_name,
+            module_type,
+        )
+
+        print(f"Final embeddings path: {embeddings_path}")
+
+        print(f"Trying to load embeddings from: {embeddings_path}")
+        try:
+            with open(os.path.join(embeddings_path, "embeddings.pkl"), "rb") as f:
+                embeddings = pickle.load(f)
+                dataset_is_embedded = True
+                print("Loaded embeddings from disk.")
+        except FileNotFoundError:
+            print("Embeddings not found on disk. Falling back to extractor.")
+
+        if dataset_is_embedded:
             dataset = load_dataset(
                 name=data_cfg.name,
                 data_dir=data_cfg.root,
@@ -292,9 +310,7 @@ def get_features_targets(
                 embeddings=embeddings,
                 embeddings_root=embeddings_path,
             )
-            dataset_is_embedded = True
-        except (FileNotFoundError, TypeError):
-            # If the embeddings are not found or embeddings_root is None, extract embeddings
+        else:
             extractor = get_extractor(
                 model_name=model_name,
                 source=source,
@@ -302,50 +318,68 @@ def get_features_targets(
                 pretrained=True,
                 model_parameters=model_params,
             )
+            transform = extractor.get_transformations()
+                    
+            if data_cfg.name.startswith("cifar") and args.input_dim == 224:
+                from torchvision import transforms
+                print("Resizing CIFAR images to 224x224 for ViT compatibility.")
+                transform = transforms.Compose([
+                    transforms.Resize((224, 224)),
+                    transform
+                ])
+
+            print(f"Final transform pipeline: {transform}")
             dataset = load_dataset(
                 name=data_cfg.name,
                 data_dir=data_cfg.root,
                 train=train,
-                transform=extractor.get_transformations(),
+                transform=transform, 
             )
 
+
     if sample_per_superclass:
-        # sampe one barch or size #shots per superclass, rather than one batch per class
+        if superclass_mapping is None:
+            raise ValueError("Superclass mapping required for sampling per superclass.")
         n_superclasses = len(set(superclass_mapping.values()))
         class_ids = [
-            [ci for ci in class_ids if superclass_mapping[ci] == i]
+            [cls_id for cls_id in ids_subset if superclass_mapping[cls_id] == i]
             for i in range(n_superclasses)
         ]
+
+
     features_all = []
     Y_all = []
     for i_batch in range(n_batches):
         indices = []
         for cls_id in class_ids:
-            if type(cls_id) == int and cls_id not in ids_subset:
+            if isinstance(cls_id, int) and cls_id not in ids_subset:
                 continue
             subset_indices = get_subset_indices(dataset, cls_id)
             indices.extend(
                 list(np.random.choice(subset_indices, size=batch_size, replace=False))
             )
+    
+        print(f"[DEBUG] Sampled indices from test set: {len(indices)} for class_ids: {class_ids}")
 
-        subset = torch.utils.data.Subset(
-            dataset,
-            indices,
-        )
+
+        subset = torch.utils.data.Subset(dataset, indices)
         batches = torch.utils.data.DataLoader(
             subset,
             batch_size=len(indices),
             shuffle=shuffle,
-            num_workers=4,
-            worker_init_fn=lambda id: np.random.seed(id + i_batch * 4),
+            num_workers=0,
+            worker_init_fn=seed_worker,
         )
         X, Y = next(iter(batches))
         X = X.to(device)
+
         if len(Y.shape) > 1 and Y.shape[1] > 1:
             Y = torch.argmax(Y, dim=1)
         if superclass_mapping is not None:
-            Y = [superclass_mapping[int(y_elem)] for y_elem in Y]
+            Y = [superclass_mapping[int(y)] for y in Y]
         Y = np.array(Y)
+
+        print(f"[DEBUG] Y shape: {Y.shape}, Unique Y values: {np.unique(Y)}")
 
         if dataset_is_embedded:
             features = X.detach().cpu().numpy()
@@ -355,10 +389,27 @@ def get_features_targets(
                 module_name=module,
                 flatten_acts=True,
             )
+            if i_batch == 0:  # Only save first batch (e.g., full CIFAR train or test set)
+                save_path = os.path.join(
+                    "features",
+                    data_cfg.name,
+                    source,
+                    complete_model_name,
+                    module_type,
+                    "train" if train else "test"
+                )
+                os.makedirs(save_path, exist_ok=True)
+
+                save_file = os.path.join(save_path, "embeddings.pkl")
+                print(f"Saving extracted embeddings to: {save_file}")
+                with open(save_file, "wb") as f:
+                    pickle.dump({idx: feat for idx, feat in zip(indices, features)}, f)
+
         features_all.append(features)
         Y_all.append(Y)
 
     return features_all, Y_all
+
 
 
 def create_config_dicts(args, embedding_keys=None) -> Tuple[FrozenDict, FrozenDict]:
@@ -406,7 +457,7 @@ def run(
     embeddings: Optional[Dict] = None,
     solver: str = "lbfgs",
     transform: bool = True,
-    zero_shot_weights: Optional[Array] = None,
+    zero_shot_weights: Optional[np.ndarray] = None,
 ) -> pd.DataFrame:
     if class_id_set_test is None:
         class_id_set_test = class_id_set
@@ -458,9 +509,9 @@ def run(
     for train_features, train_targets in zip(train_features_all, train_targets_all):
         # This loops over the repetitions
         if transform:
-            train_features = transforms[source][model_name].transform_features(
-                train_features
-            )
+            train_features = transforms[source][model_name].transform_features(train_features)
+            train_features = np.nan_to_num(train_features, nan=0.0, posinf=0.0, neginf=0.0)
+
         regressor = get_regressor(
             train_features=train_features,
             train_targets=train_targets,
@@ -496,9 +547,9 @@ def run(
             print("Time to load test data: ", (end_t_train_data - start_t_train_data))
 
             if transform:
-                test_features = transforms[source][model_name].transform_features(
-                    test_features
-                )
+                test_features = transforms[source][model_name].transform_features(test_features)
+                test_features = np.nan_to_num(test_features, nan=0.0, posinf=0.0, neginf=0.0)
+
         acc, _ = test_regression(
             regressors[i_rep],
             test_targets,
@@ -548,12 +599,24 @@ if __name__ == "__main__":
 
     # parse arguments
     args = parseargs()
+    original_dataset_name = args.dataset
+    if args.dataset == "cifar100-coarse":
+        args.dataset = "cifar100"
+
+
+
     if args.task in BREEDS_TASKS:
+        # Breeds tasks already return fine label IDs and a mapping
         class_id_set, class_id_set_test, superclass_mapping = get_breeds_task(args.task)
-    elif args.dataset == "cifar100" and args.task == "coarse":
+
+    elif args.dataset in {"cifar100", "cifar100-coarse"} and args.task == "coarse":
+        # Use CIFAR100 fine labels (0-99), and map them to 20 coarse labels
+        from downstream.fewshot.cifar import get_cifar100_coarse_map
         superclass_mapping = get_cifar100_coarse_map()
-        class_id_set = class_id_set_test = [i for i in range(100)]
+        class_id_set = class_id_set_test = [i for i in range(100)]  # Fine label IDs
+
     else:
+        # Default fallback: no coarse task, no mapping
         args.task = None
         superclass_mapping = None
         if args.class_id_set is None:
@@ -561,8 +624,10 @@ if __name__ == "__main__":
         else:
             class_id_set = args.class_id_set
         class_id_set_test = class_id_set
+
     n_test = args.n_test
     device = torch.device(args.device)
+
 
     # Load embeddings for all models
     if args.embeddings_root is not None:
@@ -592,12 +657,12 @@ if __name__ == "__main__":
         args.taus = [None]
         args.contrastive_batch_sizes = [None]
     eta, lmbda, alpha, tau, contrastive_batch_size = get_combination(
-        etas=args.etas,
-        lambdas=args.lmbdas,
-        alphas=args.alphas,
-        taus=args.taus,
-        contrastive_batch_sizes=args.contrastive_batch_sizes,
-    )
+        etas=args.etas if isinstance(args.etas, list) else [args.etas],
+        lambdas=args.lmbdas if isinstance(args.lmbdas, list) else [args.lmbdas],
+        alphas=args.alphas if isinstance(args.alphas, list) else [args.alphas],
+        taus=args.taus if isinstance(args.taus, list) else [args.taus],
+        contrastive_batch_sizes=args.contrastive_batch_sizes if isinstance(args.contrastive_batch_sizes, list) else [args.contrastive_batch_sizes],
+)
 
     all_results = []
     regressor_types = args.regressor_type
@@ -717,10 +782,30 @@ if __name__ == "__main__":
                         path_to_features=args.things_embeddings_path,
                     )
             else:
+                # Construct transform path first
+                transform_root = os.path.join(args.transforms_root, "full") if args.full_data else args.transforms_root
+                transform_path = os.path.join(
+                    transform_root,
+                    src,
+                    model_name,
+                    model_cfg.module_type,
+                    args.optim.lower(),
+                    str(eta),
+                    str(lmbda),
+                    str(alpha),
+                    str(tau),
+                    str(contrastive_batch_size),
+                    "transform.npz",
+                )
+
+                if not os.path.exists(transform_path):
+                    print(f"\n Transform not found at: {transform_path}")
+                    print("Skipping...\n")
+                    continue
+
+                # Load Glocal transform
                 transforms[src][model_name] = GlocalTransform(
-                    root=os.path.join(args.transforms_root, "full")
-                    if args.full_data
-                    else args.transforms_root,
+                    root=transform_root,
                     source=src,
                     model=model_name,
                     module=model_cfg.module_type,
@@ -730,9 +815,10 @@ if __name__ == "__main__":
                     alpha=alpha,
                     tau=tau,
                     contrastive_batch_size=contrastive_batch_size,
-                    adversarial=args.adversarial
+                    adversarial=args.adversarial,
                 )
                 print("Adversarial: ", args.adversarial)
+
                 if "mean" not in transforms[src][model_name].transform.keys():
                     # Backward compatibility with old transforms that don't have mean and std
                     with open(args.things_embeddings_path, "rb") as f:
@@ -753,6 +839,7 @@ if __name__ == "__main__":
             continue
 
         # Do few-shot
+        print(f"Regressor(s) selected: {args.regressor_type}")
         for regressor_type in regressor_types:
             # Load a zero-shot model, using Tip-Adapter
             if regressor_type == "tip":
@@ -769,6 +856,7 @@ if __name__ == "__main__":
             else:
                 zero_shot_weights = None
 
+            n_shots = args.n_shot if isinstance(args.n_shot, list) else [args.n_shot]
             for shots in n_shots:
                 if regressor_type == "ridge" and shots == 1:
                     continue
@@ -780,7 +868,7 @@ if __name__ == "__main__":
                 torch.manual_seed(int(1e5))
 
                 results = run(
-                    n_shot=args.n_shot,
+                    n_shot=shots,
                     n_test=args.n_test,
                     n_reps=args.n_reps,
                     class_id_set=class_id_set,
@@ -797,7 +885,7 @@ if __name__ == "__main__":
                     solver=args.solver,
                     transform=False if args.transform_type == "without" else True,
                     zero_shot_weights=zero_shot_weights,
-                )
+)
                 all_results.append(results)
         results = pd.concat(all_results)
         results["lmbda"] = lmbda

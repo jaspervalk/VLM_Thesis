@@ -27,7 +27,7 @@ class ZippedData(torch.utils.data.Dataset):
         self.num_triplets = self.triplets.shape[0]
         self.load_data()
 
-    def get_features(self, index: int) -> Tensor:
+    def get_features(self, index: int) -> torch.Tensor:
         if self.format == "pt":
             features = torch.load(self.feature_order[index], map_location=self.device)
         elif self.format == "hdf5":
@@ -36,7 +36,7 @@ class ZippedData(torch.utils.data.Dataset):
             )
         return features
 
-    def __getitem__(self, index: int) -> Tuple[Tensor, Tensor]:
+    def __getitem__(self, index: int) -> Tuple[torch.Tensor, torch.Tensor]:
         if self.num_triplets > self.num_features:
             triplet = self.encode_as_onehot(self.triplets[index])
             features = self.get_features(index % self.num_features)
@@ -48,7 +48,7 @@ class ZippedData(torch.utils.data.Dataset):
             features = self.get_features(index)
         return triplet, features
 
-    def encode_as_onehot(self, triplet: Tensor) -> Tensor:
+    def encode_as_onehot(self, triplet: torch.Tensor) -> torch.Tensor:
         """Encode a triplet of indices as a matrix of three one-hot-vectors."""
         return self.identity[triplet, :]
 

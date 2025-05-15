@@ -231,7 +231,7 @@ def create_model_config(args) -> Dict[str, Any]:
     return model_cfg
 
 
-def load_features(probing_root: str, subfolder: str = "embeddings") -> Dict[str, Array]:
+def load_features(probing_root: str, subfolder: str = "embeddings") -> Dict[str, np.ndarray]:
     """Load features for THINGS objects from disk."""
     with open(os.path.join(probing_root, subfolder, "features.pkl"), "rb") as f:
         features = pickle.load(f)
@@ -253,7 +253,7 @@ def get_temperature(
 
 
 def get_batches(
-    dataset: Tensor, batch_size: int, train: bool, num_workers: int = 0
+    dataset: torch.Tensor, batch_size: int, train: bool, num_workers: int = 0
 ) -> Iterator:
     batches = DataLoader(
         dataset=dataset,
@@ -297,7 +297,7 @@ def get_mean_cv_performances(cv_results: Dict[str, List[float]]) -> Dict[str, fl
 def make_results_df(
     columns: List[str],
     probing_performances: Dict[str, float],
-    ooo_choices: Array,
+    ooo_choices: np.ndarray,
     model_name: str,
     module_name: str,
     source: str,
@@ -339,7 +339,7 @@ def save_results(
     args,
     optim_cfg: Dict[str, Any],
     probing_performances: Dict[str, float],
-    ooo_choices: Array,
+    ooo_choices: np.ndarray,
 ) -> None:
     out_path = os.path.join(args.probing_root, "results")
     if not os.path.exists(out_path):
@@ -426,7 +426,7 @@ def load_extractor(model_cfg: Dict[str, str]) -> Any:
 
 
 def run(
-    features: Array,
+    features: np.ndarray,
     imagenet_root: str,
     data_root: str,
     model_cfg: Dict[str, str],
@@ -435,7 +435,7 @@ def run(
     device: str,
     rnd_seed: int,
     num_processes: int,
-) -> Tuple[Dict[str, List[float]], Array]:
+) -> Tuple[Dict[str, List[float]], np.ndarray]:
     """Run optimization process."""
     callbacks = get_callbacks(optim_cfg)
     extractor = load_extractor(model_cfg)

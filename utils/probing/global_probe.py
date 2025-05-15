@@ -8,13 +8,12 @@ import torch.nn.functional as F
 from .triplet_loss import TripletLoss
 
 FrozenDict = Any
-Tensor = torch.Tensor
 
 
 class GlobalProbe(pl.LightningModule):
     def __init__(
         self,
-        features: Tensor,
+        features: torch.Tensor,
         optim_cfg: FrozenDict,
     ):
         super().__init__()
@@ -48,7 +47,7 @@ class GlobalProbe(pl.LightningModule):
                 requires_grad=True,
             )
 
-    def get_initialization(self) -> Tensor:
+    def get_initialization(self) -> torch.Tensor:
         """Initialize the transformation matrix."""
         # initialize the transformation matrix with values drawn from a tight Gaussian with very small width
         weights = torch.eye(self.feature_dim) * self.scale
@@ -57,16 +56,27 @@ class GlobalProbe(pl.LightningModule):
             return weights, bias
         return weights
 
-    def forward(self, one_hots: Tensor) -> Tensor:
+    def forward(self, things_objects: torch.Tensor, imagenet_features: torch.Tensor) -> torch.Tensor:
+        embedding = (self.transform_w @ self.features.T)  # [D, n_objects]
         if self.use_bias:
-            embedding = self.features @ self.transform_w + self.transform_b
-        else:
-            embedding = self.features @ self.transform_w
-        batch_embeddings = one_hots @ embedding
-        return batch_embeddings
+            embedding += self.transform_b.unsqueeze(-1)  # [D, 1] + [D, n_objects]
+
+        batch_size = things_objects.shape[0]
+        things_objects = things_objects.view(batch_size * 3, -1)  # [B*3, n_objects]
+        transformed = things_objects @ embedding.T  # [B*3, D]
+        batch_embeddings = transformed.view(batch_size, 3, -1)  # [B, 3, D]
+
+        normalized_teacher_features, normalized_student_features = self.normalize_features(imagenet_features.to(torch.float))
+        teacher_similarities = normalized_teacher_features @ normalized_teacher_features.T
+        student_similarities = normalized_student_features @ normalized_student_features.T
+
+        return batch_embeddings, teacher_similarities, student_similarities
+
+
+
 
     @staticmethod
-    def convert_predictions(sim_predictions: Tensor) -> Tensor:
+    def convert_predictions(sim_predictions: torch.Tensor) -> torch.Tensor:
         """Convert similarity predictions into odd-one-out predictions."""
         first_conversion = torch.where(
             sim_predictions != 1, sim_predictions - 2, sim_predictions
@@ -76,10 +86,10 @@ class GlobalProbe(pl.LightningModule):
 
     @staticmethod
     def compute_similarities(
-        anchor: Tensor,
-        positive: Tensor,
-        negative: Tensor,
-    ) -> Tuple[Tensor, Tensor, Tensor]:
+        anchor: torch.Tensor,
+        positive: torch.Tensor,
+        negative: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Apply the similarity function (modeled as a dot product) to each pair in the triplet."""
         sim_i = torch.sum(anchor * positive, dim=1)
         sim_j = torch.sum(anchor * negative, dim=1)
@@ -87,8 +97,8 @@ class GlobalProbe(pl.LightningModule):
         return (sim_i, sim_j, sim_k)
 
     @staticmethod
-    def break_ties(probas: Tensor) -> Tensor:
-        return torch.tensor(
+    def break_ties(probas: torch.Tensor) -> torch.Tensor:
+        return torch.torch.Tensor(
             [
                 -1
                 if (
@@ -100,7 +110,7 @@ class GlobalProbe(pl.LightningModule):
             ]
         )
 
-    def accuracy_(self, probas: Tensor, batching: bool = True) -> Tensor:
+    def accuracy_(self, probas: torch.Tensor, batching: bool = True) -> torch.Tensor:
         choices = self.break_ties(probas)
         argmax = np.where(choices == 0, 1, 0)
         acc = argmax.mean() if batching else argmax.tolist()
@@ -112,17 +122,17 @@ class GlobalProbe(pl.LightningModule):
         return choice_acc
 
     @staticmethod
-    def unbind(embeddings: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
+    def unbind(embeddings: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         return torch.unbind(
             torch.reshape(embeddings, (-1, 3, embeddings.shape[-1])), dim=1
         )
 
     @staticmethod
-    def normalize(triplet: List[Tensor]) -> List[Tensor]:
+    def normalize(triplet: List[torch.Tensor]) -> List[torch.Tensor]:
         """Normalize object embeddings to have unit norm."""
         return list(map(lambda obj: F.normalize(obj, dim=1), triplet))
 
-    def l2_regularization(self, alpha: float = 1.0) -> Tensor:
+    def l2_regularization(self, alpha: float = 1.0) -> torch.Tensor:
         """Apply combination of l2 and l1 regularization during training."""
         # NOTE: Frobenius norm in PyTorch is equivalent to torch.linalg.vector_norm(self.transform, ord=2, dim=(0, 1)))
         l2_reg = alpha * torch.linalg.norm(self.transform_w, ord="fro")
@@ -132,7 +142,7 @@ class GlobalProbe(pl.LightningModule):
         complexity_loss = self.lmbda * (l2_reg + l1_reg)
         return complexity_loss
 
-    def eye_regularization(self) -> Tensor:
+    def eye_regularization(self) -> torch.Tensor:
         complexity_loss = self.lmbda * torch.sum(
             (
                 self.transform_w
@@ -143,7 +153,7 @@ class GlobalProbe(pl.LightningModule):
         )
         return complexity_loss
 
-    def training_step(self, one_hots: Tensor, batch_idx: int):
+    def training_step(self, one_hots: torch.Tensor, batch_idx: int):
         batch_embeddings = self(one_hots)
         anchor, positive, negative = self.unbind(batch_embeddings)
         dots = self.compute_similarities(anchor, positive, negative)
@@ -159,19 +169,19 @@ class GlobalProbe(pl.LightningModule):
         self.log("train_acc", acc, on_epoch=True)
         return loss
 
-    def validation_step(self, one_hots: Tensor, batch_idx: int):
+    def validation_step(self, one_hots: torch.Tensor, batch_idx: int):
         loss, acc = self._shared_eval_step(one_hots, batch_idx)
         metrics = {"val_acc": acc, "val_loss": loss}
         self.log_dict(metrics)
         return metrics
 
-    def test_step(self, one_hots: Tensor, batch_idx: int):
+    def test_step(self, one_hots: torch.Tensor, batch_idx: int):
         loss, acc = self._shared_eval_step(one_hots, batch_idx)
         metrics = {"test_acc": acc, "test_loss": loss}
         self.log_dict(metrics)
         return metrics
 
-    def _shared_eval_step(self, one_hots: Tensor, batch_idx: int):
+    def _shared_eval_step(self, one_hots: torch.Tensor, batch_idx: int):
         batch_embeddings = self(one_hots)
         anchor, positive, negative = self.unbind(batch_embeddings)
         similarities = self.compute_similarities(anchor, positive, negative)
@@ -179,7 +189,7 @@ class GlobalProbe(pl.LightningModule):
         acc = self.choice_accuracy(similarities)
         return loss, acc
 
-    def predict_step(self, one_hots: Tensor, batch_idx: int):
+    def predict_step(self, one_hots: torch.Tensor, batch_idx: int):
         batch_embeddings = self(one_hots)
         anchor, positive, negative = self.unbind(batch_embeddings)
         similarities = self.compute_similarities(anchor, positive, negative)

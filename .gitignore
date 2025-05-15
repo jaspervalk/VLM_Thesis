@@ -9,3 +9,4 @@ resources
 *.ipynb_checkpoints/
 *.html
 *.ipynb
+.venv/

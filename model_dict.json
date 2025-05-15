@@ -1,0 +1,54 @@
+{
+  "OpenCLIP_RN50_yfcc15m": {
+    "model_type": "OpenCLIP",
+    "variant": "RN50",
+    "dataset": "yfcc15m",
+    "source": "custom",
+    "penultimate": {
+      "module_name": "visual"
+    }
+  },
+  "OpenCLIP_ViT-L-14_laion400m_e32": {
+    "model_type": "OpenCLIP",
+    "variant": "ViT-L-14",
+    "dataset": "laion400m_e32",
+    "source": "custom",
+    "penultimate": {
+      "module_name": "visual"
+    }
+  },
+  "OpenCLIP_ViT-L-14_laion2b_s32b_b82k": {
+    "model_type": "OpenCLIP",
+    "variant": "ViT-L-14",
+    "dataset": "laion2b_s32b_b82k",
+    "source": "custom",
+    "penultimate": {
+      "module_name": "visual"
+    }
+  },
+  "official_clip": {
+    "model_type": "CLIP",
+    "variant": "ViT-B-32",
+    "source": "custom",
+    "penultimate": {
+      "module_name": "ln_post"
+    }
+  },
+  "official_clip_ViT-L-14": {
+  "model_type": "CLIP",
+  "variant": "ViT-L-14",
+  "source": "custom",
+  "penultimate": {
+    "module_name": "ln_post"
+    }
+  },
+  "CLIP_ViT-L-14_WIT": {
+  "model_type": "CLIP",
+  "variant": "ViT-L-14",
+  "source": "custom",
+  "penultimate": {
+    "module_name": "visual.ln_post"
+  }
+}
+
+}

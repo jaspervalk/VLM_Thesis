@@ -12,7 +12,7 @@ import pandas as pd
 from . import helpers
 from .families import Families
 
-Array = np.ndarray
+
 
 
 @dataclass
@@ -22,7 +22,7 @@ class Partition:
     results: pd.DataFrame
     triplet_dataset: object
     concept_importance: str
-    concept_embedding: Array
+    concept_embedding: np.ndarray
     family_i: str
     family_j: str
     target: int = 2
@@ -48,14 +48,14 @@ class Partition:
         ]
 
     @staticmethod
-    def convert_choices(probas: Array) -> Array:
+    def convert_choices(probas: np.ndarray) -> np.ndarray:
         """Labels for cross-entropy and clasification error are rotations of each other."""
         pair_choices = probas.argmax(axis=1)
         firt_conversion = np.where(pair_choices != 1, pair_choices - 2, pair_choices)
         ooo_choices = np.where(firt_conversion < 0, 2, firt_conversion)
         return ooo_choices
 
-    def get_model_choices(self) -> Array:
+    def get_model_choices(self) -> np.ndarray:
         """Get the odd-one-out choices for every triplet for every model."""
         """
         model_choices = np.stack(
@@ -85,7 +85,7 @@ class Partition:
         return children_choices
 
     @property
-    def family_i_hits(self) -> Array:
+    def family_i_hits(self) -> np.ndarray:
         model_subset = self.get_model_subset(self.family_i)
         children_family_i_choices = self.get_children_choices(model_subset)
         family_i_hits = np.where(
@@ -94,18 +94,18 @@ class Partition:
         )[0]
         return family_i_hits
 
-    def filter_failures(self, model_choices: Array) -> Tuple[List[int], Array]:
+    def filter_failures(self, model_choices: np.ndarray) -> Tuple[List[int], np.ndarray]:
         failures, choices = zip(
             *list(filter(lambda kv: self.target not in kv[1], enumerate(model_choices)))
         )
-        return failures, np.asarray(choices)
+        return failures, np.asnp.ndarray(choices)
 
     @staticmethod
-    def get_intersection(family_failures: pd.DataFrame) -> Array:
+    def get_intersection(family_failures: pd.DataFrame) -> np.ndarray:
         """Find the intersection of failures between the children belonging to a family."""
 
-        def equality_condition(children_choices: Array) -> bool:
-            def is_equal(children_choices: Array) -> bool:
+        def equality_condition(children_choices: np.ndarray) -> bool:
+            def is_equal(children_choices: np.ndarray) -> bool:
                 return np.unique(children_choices).shape[0] == 1
 
             return is_equal(children_choices)
@@ -133,7 +133,7 @@ class Partition:
         return failures
 
     @staticmethod
-    def _is_different(family_i_choices: Array, family_j_choices: Array) -> bool:
+    def _is_different(family_i_choices: np.ndarray, family_j_choices: np.ndarray) -> bool:
         return np.all(
             [
                 family_i_choices.shape[0] == 1,
@@ -142,11 +142,11 @@ class Partition:
             ]
         )
 
-    def get_differences(self, model_failures: Array) -> Array:
+    def get_differences(self, model_failures: np.ndarray) -> np.ndarray:
         children_i_cols = self.get_children_columns(model_failures, self.family_i)
         children_j_cols = self.get_children_columns(model_failures, self.family_j)
 
-        def check_choice_difference(model_failure: Array) -> bool:
+        def check_choice_difference(model_failure: np.ndarray) -> bool:
             family_i_choices = np.unique(model_failure[children_i_cols])
             family_j_choices = np.unique(model_failure[children_j_cols])
             return self._is_different(family_i_choices, family_j_choices)
@@ -179,7 +179,7 @@ class Partition:
         """
         children_family_i_hits = self.family_i_hits
         children_family_j_failures = self.family_j_failures
-        intersection = np.array(
+        intersection = np.np.ndarray(
             list(
                 set(children_family_i_hits).intersection(
                     set(children_family_j_failures.index.values)

@@ -6,6 +6,7 @@ import warnings
 from collections import defaultdict
 from typing import Dict, List
 
+from numpy.typing import NDArray
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
@@ -99,7 +100,7 @@ def get_best_probing_results(root: str) -> pd.DataFrame:
 
 def find_best_transforms(
     root: str, best_probing_results: pd.DataFrame
-) -> Dict[str, Dict[str, Dict[str, Array]]]:
+) -> Dict[str, Dict[str, Dict[str, NDArray]]]:
     transforms = defaultdict(lambda: defaultdict(dict))
     missing_transforms = 0
     for _, row in tqdm(best_probing_results.iterrows(), desc="Model"):
@@ -142,13 +143,13 @@ def find_best_transforms(
     return transforms
 
 
-def load_transform(subdir: str) -> Array:
+def load_transform(subdir: str) -> NDArray:
     transform = np.load(os.path.join(subdir, "transform.npz"))
     return transform
 
 
 def save_transforms(
-    root: str, transforms: Dict[str, Dict[str, Dict[str, Array]]]
+    root: str, transforms: Dict[str, Dict[str, Dict[str, NDArray]]]
 ) -> None:
     with open(os.path.join(root, "transforms.pkl"), "wb") as f:
         pickle.dump(transforms, f)

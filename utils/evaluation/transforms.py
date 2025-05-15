@@ -4,6 +4,7 @@ import os
 import pickle
 from dataclasses import dataclass
 from typing import Any
+import os
 
 import numpy as np
 
@@ -53,7 +54,7 @@ class GlobalTransform:
                 f"\nThe provided file does not have a valid format. Valid formats are: {FILE_FORMATS}\n"
             )
 
-    def transform_features(self, features: Array) -> Array:
+    def transform_features(self, features: np.ndarray) -> np.ndarray:
         features = (features - self.things_mean) / self.things_std
         if "weights" in self.transform:
             features = features @ self.transform["weights"]
@@ -108,15 +109,15 @@ class GlocalTransform:
         assert os.path.isfile(
             path_to_transform_file
         ), f"\nThe provided path does not point to a valid file:{path_to_transform_file}\n"
-        transform = np.load(path_to_transform_file)
+        transform = np.load(path_to_transform_file, allow_pickle=True)
         return transform
 
-    def transform_features(self, features: Array) -> Array:
+    def transform_features(self, features: np.ndarray) -> np.ndarray:
         things_mean = self.transform["mean"]
         things_std = self.transform["std"]
         features = (features - things_mean) / things_std
         if "weights" in self.transform:
-            features = features @ self.transform["weights"]
+            features = features @ self.transform["weights"].astype(features.dtype)
             if "bias" in self.transform:
-                features += self.transform["bias"]
+                features += self.transform["bias"].astype(features.dtype)
         return features

@@ -1,5 +1,6 @@
 import argparse
 import os
+import pickle
 import random
 import warnings
 from collections import defaultdict
@@ -128,8 +129,8 @@ def evaluate(args) -> None:
 
     embeddings = utils.evaluation.load_embeddings(
         embeddings_root=args.embeddings_root,
-        module="embeddings" if args.module == "penultimate" else "logits",
-        sort=sort,
+        module=args.module,
+        sort=None,
         object_names=object_names,
     )
     model_cfg, data_cfg = create_hyperparam_dicts(args, embeddings.keys())
@@ -138,11 +139,36 @@ def evaluate(args) -> None:
         data_dir=data_cfg.root,
     )
     results = []
-
     model_features = defaultdict(lambda: defaultdict(dict))
+
+    # Load triplets
+    triplets = np.load(os.path.join(args.data_root, "things", "triplets", "train_25.npy"))
+    print("Triplets shape:", triplets.shape)
+    print("Max index in triplets:", np.max(triplets))
+
+    # Load filenames subset
+    subset_path = os.path.join(args.data_root, "things", "triplets", "filenames.npy")
+    used_filenames = None
+    if os.path.exists(subset_path):
+        used_filenames = np.load(subset_path)
+        print("Using triplet subset filenames:", used_filenames[:5])
+
     for i, (model_name, features) in tqdm(enumerate(embeddings.items()), desc="Model"):
         family = utils.analyses.get_family_name(model_name)
-        triplets = dataset.get_triplets()
+
+        # if used_filenames is not None:
+        #     filenames_path = os.path.join(args.embeddings_root, f"{model_name}.pkl")
+        #     if os.path.exists(filenames_path):
+        #         with open(filenames_path, "rb") as f:
+        #             data = pickle.load(f)
+        #             full_filenames = np.array([fn.decode("utf-8") if isinstance(fn, bytes) else fn for fn in data["filenames"]])
+        #             full_filenames = np.array([os.path.basename(fn).split(".")[0] for fn in full_filenames])
+
+        #         indices = [np.where(full_filenames == name)[0][0] for name in used_filenames]
+        #         features = features[indices]
+        #     else:
+        #         print(f"Could not find .pkl file for model '{model_name}' to extract filenames.")
+
         choices, probas = utils.evaluation.get_predictions(
             features=features,
             triplets=triplets,
@@ -153,10 +179,12 @@ def evaluate(args) -> None:
         acc = utils.evaluation.accuracy(choices)
         entropies = utils.evaluation.ventropy(probas)
         mean_entropy = entropies.mean().item()
+
         if args.verbose:
             print(
                 f"\nModel: {model_name}, Family: {family}, Zero-shot accuracy: {acc:.4f}, Average triplet entropy: {mean_entropy:.3f}\n"
             )
+
         summary = {
             "model": model_name,
             "zero-shot": acc,
@@ -168,6 +196,7 @@ def evaluate(args) -> None:
         }
         results.append(summary)
         model_features[model_cfg.source][model_name][args.module] = features
+
 
     # convert results into Pandas DataFrame
     results = pd.DataFrame(results)

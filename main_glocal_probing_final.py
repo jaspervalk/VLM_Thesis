@@ -191,7 +191,7 @@ def create_optimization_config(args) -> Dict[str, Any]:
     return optim_cfg
 
 
-def load_features(probing_root: str, subfolder: str = "embeddings") -> Dict[str, Array]:
+def load_features(probing_root: str, subfolder: str = "embeddings") -> Dict[str, np.ndarray]:
     """Load features for THINGS objects from disk."""
     with open(os.path.join(probing_root, subfolder, "features.pkl"), "rb") as f:
         features = pickle.load(f)
@@ -199,7 +199,7 @@ def load_features(probing_root: str, subfolder: str = "embeddings") -> Dict[str,
 
 
 def get_batches(
-    dataset: Tensor, batch_size: int, train: bool, num_workers: int = 0
+    dataset: torch.Tensor, batch_size: int, train: bool, num_workers: int = 0
 ) -> Iterator:
     batches = DataLoader(
         dataset=dataset,
@@ -243,7 +243,7 @@ def get_mean_cv_performances(cv_results: Dict[str, List[float]]) -> Dict[str, fl
 def make_results_df(
     columns: List[str],
     probing_performances: Dict[str, float],
-    ooo_choices: Array,
+    ooo_choices: np.ndarray,
     model_name: str,
     module_name: str,
     source: str,
@@ -285,7 +285,7 @@ def save_results(
     args,
     optim_cfg: Dict[str, Any],
     probing_performances: Dict[str, float],
-    ooo_choices: Array,
+    ooo_choices: np.ndarray,
 ) -> None:
     out_path = os.path.join(args.probing_root, "results")
     if not os.path.exists(out_path):
@@ -379,7 +379,7 @@ def get_imagenet_features(root: str, format: str, device: str) -> Tuple[Any, Any
 
 
 def run(
-    features: Array,
+    features: np.ndarray,
     imagenet_features_root: str,
     data_root: str,
     optim_cfg: Dict[str, Any],
@@ -387,7 +387,7 @@ def run(
     device: str,
     num_processes: int,
     features_format: str,
-) -> Tuple[Dict[str, List[float]], Array]:
+) -> Tuple[Dict[str, List[float]], np.ndarray]:
     """Run optimization process."""
     callbacks = get_callbacks(optim_cfg)
     imagenet_train_features, imagenet_val_features = get_imagenet_features(

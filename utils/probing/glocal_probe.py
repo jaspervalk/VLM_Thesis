@@ -9,13 +9,12 @@ import torch.nn.functional as F
 from .contrastive_loss import ContrastiveLoss
 from .triplet_loss import TripletLoss
 
-Tensor = torch.Tensor
 
 
 class GlocalProbe(pl.LightningModule):
     def __init__(
         self,
-        features: Tensor,
+        features: torch.Tensor,
         optim_cfg: Dict[str, Any],
         model_cfg: Dict[str, str],
         extractor: Any,
@@ -67,7 +66,7 @@ class GlocalProbe(pl.LightningModule):
                 requires_grad=True,
             )
 
-    def get_initialization(self) -> Tensor:
+    def get_initialization(self) -> torch.Tensor:
         """Initialize the transformation matrix."""
         # initialize the transformation matrix with values drawn from a tight Gaussian with very small width
         weights = torch.eye(self.feature_dim) * self.scale
@@ -76,7 +75,7 @@ class GlocalProbe(pl.LightningModule):
             return weights, bias
         return weights
 
-    def normalize_features(self, features: Tensor) -> Tuple[Tensor, Tensor]:
+    def normalize_features(self, features: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Map ImageNet features onto the unit-sphere."""
         normalized_teacher_features = F.normalize(features, dim=1)
         student_features = features @ self.transform_w
@@ -85,26 +84,29 @@ class GlocalProbe(pl.LightningModule):
         normalized_student_features = F.normalize(student_features, dim=1)
         return normalized_teacher_features, normalized_student_features
 
-    def forward(self, things_objects: Tensor, imagenet_features: Tensor) -> Tensor:
-        things_embedding = self.features @ self.transform_w
+    def forward(self, things_objects: torch.Tensor, imagenet_features: torch.Tensor) -> torch.Tensor:
+        embedding = (self.transform_w @ self.features.T)  # [D, n_objects]
         if self.use_bias:
-            things_embedding += self.transform_b
-        batch_embeddings = things_objects @ things_embedding
-        (
-            normalized_teacher_imagenet_features,
-            normalized_student_imagenet_features,
-        ) = self.normalize_features(imagenet_features.to(torch.float))
-        teacher_similarities = (
-            normalized_teacher_imagenet_features
-            @ normalized_teacher_imagenet_features.T
-        )
-        student_similarities = (
-            normalized_student_imagenet_features
-            @ normalized_student_imagenet_features.T
-        )
+            embedding += self.transform_b.unsqueeze(-1)  # [D, 1] + [D, n_objects]
+
+        batch_size = things_objects.shape[0]
+        things_objects = things_objects.view(batch_size * 3, -1)  # [B*3, n_objects]
+
+        # 🔍 Debug prints
+        print(f"[DEBUG] things_objects shape: {things_objects.shape}")
+        print(f"[DEBUG] embedding shape: {embedding.shape}")
+
+        transformed = things_objects @ embedding.T  # [B*3, D]
+        batch_embeddings = transformed.view(batch_size, 3, -1)  # [B, 3, D]
+
+        normalized_teacher_features, normalized_student_features = self.normalize_features(imagenet_features.to(torch.float))
+        teacher_similarities = normalized_teacher_features @ normalized_teacher_features.T
+        student_similarities = normalized_student_features @ normalized_student_features.T
         return batch_embeddings, teacher_similarities, student_similarities
 
-    def global_prediction(self, things_objects: Tensor) -> Tensor:
+
+
+    def global_prediction(self, things_objects: torch.Tensor) -> torch.Tensor:
         things_embedding = self.features @ self.transform_w
         if self.use_bias:
             things_embedding += self.transform_b
@@ -112,7 +114,7 @@ class GlocalProbe(pl.LightningModule):
         return batch_embeddings
 
     @staticmethod
-    def convert_predictions(sim_predictions: Tensor) -> Tensor:
+    def convert_predictions(sim_predictions: torch.Tensor) -> torch.Tensor:
         """Convert similarity predictions into odd-one-out predictions."""
         first_conversion = torch.where(
             sim_predictions != 1, sim_predictions - 2, sim_predictions
@@ -122,10 +124,10 @@ class GlocalProbe(pl.LightningModule):
 
     @staticmethod
     def compute_similarities(
-        anchor: Tensor,
-        positive: Tensor,
-        negative: Tensor,
-    ) -> Tuple[Tensor, Tensor, Tensor]:
+        anchor: torch.Tensor,
+        positive: torch.Tensor,
+        negative: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Apply the similarity function (modeled as a dot product) to each pair in the triplet."""
         sim_i = torch.sum(anchor * positive, dim=1)
         sim_j = torch.sum(anchor * negative, dim=1)
@@ -133,8 +135,8 @@ class GlocalProbe(pl.LightningModule):
         return (sim_i, sim_j, sim_k)
 
     @staticmethod
-    def break_ties(probas: Tensor) -> Tensor:
-        return torch.tensor(
+    def break_ties(probas: torch.Tensor) -> torch.Tensor:
+        return torch.torch.Tensor(
             [
                 -1
                 if (
@@ -146,7 +148,7 @@ class GlocalProbe(pl.LightningModule):
             ]
         )
 
-    def accuracy_(self, probas: Tensor, batching: bool = True) -> Tensor:
+    def accuracy_(self, probas: torch.Tensor, batching: bool = True) -> torch.Tensor:
         choices = self.break_ties(probas)
         argmax = np.where(choices == 0, 1, 0)
         acc = argmax.mean() if batching else argmax.tolist()
@@ -158,17 +160,17 @@ class GlocalProbe(pl.LightningModule):
         return choice_acc
 
     @staticmethod
-    def unbind(embeddings: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
+    def unbind(embeddings: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         return torch.unbind(
             torch.reshape(embeddings, (-1, 3, embeddings.shape[-1])), dim=1
         )
 
     @staticmethod
-    def normalize(triplet: List[Tensor]) -> List[Tensor]:
+    def normalize(triplet: List[torch.Tensor]) -> List[torch.Tensor]:
         """Normalize object embeddings to have unit norm."""
         return list(map(lambda obj: F.normalize(obj, dim=1), triplet))
 
-    def l2_regularization(self, alpha: float = 1.0) -> Tensor:
+    def l2_regularization(self, alpha: float = 1.0) -> torch.Tensor:
         """Apply combination of l2 and l1 regularization during training."""
         # NOTE: Frobenius norm in PyTorch is equivalent to torch.linalg.vector_norm(self.transform, ord=2, dim=(0, 1)))
         l2_reg = alpha * torch.linalg.norm(self.transform_w, ord="fro")
@@ -178,7 +180,7 @@ class GlocalProbe(pl.LightningModule):
         complexity_loss = l2_reg + l1_reg
         return complexity_loss
 
-    def eye_regularization(self) -> Tensor:
+    def eye_regularization(self) -> torch.Tensor:
         """Regularization towards the identity matrix."""
         complexity_loss = torch.sum(
             (
@@ -191,14 +193,14 @@ class GlocalProbe(pl.LightningModule):
         return complexity_loss
 
     def training_step(
-        self, batch: Tuple[Tensor, Tuple[Tensor, Tensor]], batch_idx: int
-    ) -> Tensor:
+        self, batch: Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]], batch_idx: int
+    ) -> torch.Tensor:
         things_objects, (imagenet_images, _) = batch
         imagenet_features = self.teacher_extractor.extract_features(
             batches=imagenet_images.unsqueeze(0),
             module_name=self.module,
             flatten_acts=True,
-            output_type="tensor",
+            output_type="torch.Tensor",
         )
         batch_embeddings, teacher_similarities, student_similarities = self(
             things_objects, imagenet_features
@@ -223,6 +225,12 @@ class GlocalProbe(pl.LightningModule):
         self.log("triplet_loss", global_loss, on_epoch=True)
         self.log("local_loss", locality_loss, on_epoch=True)
         self.log("complexity_loss", complexity_loss, on_epoch=True)
+        self.log("loss", loss, prog_bar=True)
+        print(
+            f"[DEBUG] Step {batch_idx} | contrastive: {locality_loss.item():.4f}, "
+            f"triplet: {global_loss.item():.4f}, complexity: {complexity_loss.item():.4f}, "
+            f"total: {loss.item():.4f}"
+            )
         return loss
 
     def _save_transform_snapshot(self) -> None:
@@ -245,7 +253,7 @@ class GlocalProbe(pl.LightningModule):
                 )
 
     def validation_step(
-        self, batch: Tuple[Tensor, Tuple[Tensor, Tensor]], batch_idx: int
+        self, batch: Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]], batch_idx: int
     ) -> Dict[str, float]:
         global_loss, locality_loss, loss, acc = self._shared_eval_step(batch, batch_idx)
         # save snapshot of the transformation
@@ -260,7 +268,7 @@ class GlocalProbe(pl.LightningModule):
         return metrics
 
     def test_step(
-        self, batch: Tuple[Tensor, Tuple[Tensor, Tensor]], batch_idx: int
+        self, batch: Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]], batch_idx: int
     ) -> Dict[str, float]:
         global_loss, locality_loss, loss, acc = self._shared_eval_step(batch, batch_idx)
         metrics = {
@@ -273,7 +281,7 @@ class GlocalProbe(pl.LightningModule):
         return metrics
 
     def _shared_eval_step(
-        self, batch: Tuple[Tensor, Tuple[Tensor, Tensor]], batch_idx: int
+        self, batch: Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]], batch_idx: int
     ) -> Tuple[float, float, float, float]:
         things_objects, (imagenet_images, _) = batch
         imagenet_features = self.teacher_extractor.extract_features(
@@ -293,7 +301,7 @@ class GlocalProbe(pl.LightningModule):
         acc = self.choice_accuracy(similarities)
         return global_loss, locality_loss, loss, acc
 
-    def predict_step(self, batch: Tensor, batch_idx: int):
+    def predict_step(self, batch: torch.Tensor, batch_idx: int):
         things_objects = batch
         batch_embeddings = self.global_prediction(things_objects)
         anchor, positive, negative = self.unbind(batch_embeddings)
@@ -328,7 +336,7 @@ class GlocalProbe(pl.LightningModule):
 class GlocalFeatureProbe(pl.LightningModule):
     def __init__(
         self,
-        features: Tensor,
+        features: torch.Tensor,
         optim_cfg: Dict[str, Any],
     ) -> None:
         super().__init__()
@@ -376,7 +384,7 @@ class GlocalFeatureProbe(pl.LightningModule):
                 requires_grad=True,
             )
 
-    def get_initialization(self) -> Tensor:
+    def get_initialization(self) -> torch.Tensor:
         """Initialize the transformation matrix."""
         # initialize the transformation matrix with values drawn from a tight Gaussian with very small width
         weights = torch.eye(self.feature_dim) * self.scale
@@ -385,7 +393,7 @@ class GlocalFeatureProbe(pl.LightningModule):
             return weights, bias
         return weights
 
-    def normalize_features(self, features: Tensor) -> Tuple[Tensor, Tensor]:
+    def normalize_features(self, features: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Map ImageNet features onto the unit-sphere."""
         normalized_teacher_features = F.normalize(features, dim=1)
         student_features = features @ self.transform_w
@@ -393,27 +401,32 @@ class GlocalFeatureProbe(pl.LightningModule):
             student_features += self.transform_b
         normalized_student_features = F.normalize(student_features, dim=1)
         return normalized_teacher_features, normalized_student_features
-
-    def forward(self, things_objects: Tensor, imagenet_features: Tensor) -> Tensor:
-        things_embedding = self.features @ self.transform_w
+    
+    def forward(self, things_objects: torch.Tensor, imagenet_features: torch.Tensor) -> torch.Tensor:
+        # `self.features` shape: [n_objects, feature_dim]
+        # `self.transform_w` shape: [feature_dim, feature_dim]
+        things_embedding = self.features @ self.transform_w  # -> [n_objects, feature_dim]
         if self.use_bias:
-            things_embedding += self.transform_b
-        batch_embeddings = things_objects @ things_embedding
-        (
-            normalized_teacher_imagenet_features,
-            normalized_student_imagenet_features,
-        ) = self.normalize_features(imagenet_features)
-        teacher_similarities = (
-            normalized_teacher_imagenet_features
-            @ normalized_teacher_imagenet_features.T
-        )
-        student_similarities = (
-            normalized_student_imagenet_features
-            @ normalized_student_imagenet_features.T
-        )
+            things_embedding += self.transform_b  # broadcast add: [n_objects, feature_dim]
+
+        # 💡 things_objects shape: [batch_size, 3, n_objects]
+        # 💡 things_embedding shape: [n_objects, feature_dim]
+        # Matrix multiplication over last dim of things_objects and first dim of things_embedding
+        print(f"[DEBUG] things_objects shape: {things_objects.shape}")  # should be [B, 3, n_objects]
+        print(f"[DEBUG] things_embedding shape: {things_embedding.shape}")  # should be [n_objects, D]
+
+        batch_embeddings = torch.matmul(things_objects, things_embedding)  # -> [batch_size, 3, feature_dim]
+
+        # Normalize features for contrastive loss
+        normalized_teacher_features, normalized_student_features = self.normalize_features(imagenet_features.to(torch.float))
+        teacher_similarities = normalized_teacher_features @ normalized_teacher_features.T
+        student_similarities = normalized_student_features @ normalized_student_features.T
+
         return batch_embeddings, teacher_similarities, student_similarities
 
-    def global_prediction(self, things_objects: Tensor) -> Tensor:
+
+
+    def global_prediction(self, things_objects: torch.Tensor) -> torch.Tensor:
         things_embedding = self.features @ self.transform_w
         if self.use_bias:
             things_embedding += self.transform_b
@@ -421,7 +434,7 @@ class GlocalFeatureProbe(pl.LightningModule):
         return batch_embeddings
 
     @staticmethod
-    def convert_predictions(sim_predictions: Tensor) -> Tensor:
+    def convert_predictions(sim_predictions: torch.Tensor) -> torch.Tensor:
         """Convert similarity predictions into odd-one-out predictions."""
         first_conversion = torch.where(
             sim_predictions != 1, sim_predictions - 2, sim_predictions
@@ -431,10 +444,10 @@ class GlocalFeatureProbe(pl.LightningModule):
 
     @staticmethod
     def compute_similarities(
-        anchor: Tensor,
-        positive: Tensor,
-        negative: Tensor,
-    ) -> Tuple[Tensor, Tensor, Tensor]:
+        anchor: torch.Tensor,
+        positive: torch.Tensor,
+        negative: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Apply the similarity function (modeled as a dot product) to each pair in the triplet."""
         sim_i = torch.sum(anchor * positive, dim=1)
         sim_j = torch.sum(anchor * negative, dim=1)
@@ -442,8 +455,8 @@ class GlocalFeatureProbe(pl.LightningModule):
         return (sim_i, sim_j, sim_k)
 
     @staticmethod
-    def break_ties(probas: Tensor) -> Tensor:
-        return torch.tensor(
+    def break_ties(probas: torch.Tensor) -> torch.Tensor:
+        return torch.torch.Tensor(
             [
                 -1
                 if (
@@ -455,7 +468,7 @@ class GlocalFeatureProbe(pl.LightningModule):
             ]
         )
 
-    def accuracy_(self, probas: Tensor, batching: bool = True) -> Tensor:
+    def accuracy_(self, probas: torch.Tensor, batching: bool = True) -> torch.Tensor:
         choices = self.break_ties(probas)
         argmax = np.where(choices == 0, 1, 0)
         acc = argmax.mean() if batching else argmax.tolist()
@@ -467,17 +480,17 @@ class GlocalFeatureProbe(pl.LightningModule):
         return choice_acc
 
     @staticmethod
-    def unbind(embeddings: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
+    def unbind(embeddings: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         return torch.unbind(
             torch.reshape(embeddings, (-1, 3, embeddings.shape[-1])), dim=1
         )
 
     @staticmethod
-    def normalize(triplet: List[Tensor]) -> List[Tensor]:
+    def normalize(triplet: List[torch.Tensor]) -> List[torch.Tensor]:
         """Normalize object embeddings to have unit norm."""
         return list(map(lambda obj: F.normalize(obj, dim=1), triplet))
 
-    def l2_regularization(self, alpha: float = 1.0) -> Tensor:
+    def l2_regularization(self, alpha: float = 1.0) -> torch.Tensor:
         """Apply combination of l2 and l1 regularization during training."""
         # NOTE: Frobenius norm in PyTorch is equivalent to torch.linalg.vector_norm(self.transform, ord=2, dim=(0, 1)))
         l2_reg = alpha * torch.linalg.norm(self.transform_w, ord="fro")
@@ -487,7 +500,7 @@ class GlocalFeatureProbe(pl.LightningModule):
         complexity_loss = l2_reg + l1_reg
         return complexity_loss
 
-    def eye_regularization(self) -> Tensor:
+    def eye_regularization(self) -> torch.Tensor:
         """Regularization towards the identity matrix."""
         complexity_loss = torch.sum(
             (
@@ -499,7 +512,7 @@ class GlocalFeatureProbe(pl.LightningModule):
         )
         return complexity_loss
 
-    def training_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int):
+    def training_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int):
         things_objects, imagenet_features = batch
         batch_embeddings, teacher_similarities, student_similarities = self(
             things_objects, imagenet_features
@@ -546,7 +559,7 @@ class GlocalFeatureProbe(pl.LightningModule):
                 )
 
     def validation_step(
-        self, batch: Tuple[Tensor, Tensor], batch_idx: int
+        self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> Dict[str, float]:
         global_loss, locality_loss, loss, acc = self._shared_eval_step(batch, batch_idx)
         # save snapshot of the transformation
@@ -561,7 +574,7 @@ class GlocalFeatureProbe(pl.LightningModule):
         return metrics
 
     def test_step(
-        self, batch: Tuple[Tensor, Tensor], batch_idx: int
+        self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> Dict[str, float]:
         global_loss, locality_loss, loss, acc = self._shared_eval_step(batch, batch_idx)
         metrics = {
@@ -574,7 +587,7 @@ class GlocalFeatureProbe(pl.LightningModule):
         return metrics
 
     def _shared_eval_step(
-        self, batch: Tuple[Tensor, Tensor], batch_idx: int
+        self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> Tuple[float, float, float, float]:
         things_objects, imagenet_features = batch
         batch_embeddings, teacher_similarities, student_similarities = self(
@@ -588,7 +601,7 @@ class GlocalFeatureProbe(pl.LightningModule):
         acc = self.choice_accuracy(similarities)
         return global_loss, locality_loss, loss, acc
 
-    def predict_step(self, things_objects: Tensor, batch_idx: int):
+    def predict_step(self, things_objects: torch.Tensor, batch_idx: int):
         batch_embeddings = self.global_prediction(things_objects)
         anchor, positive, negative = self.unbind(batch_embeddings)
         similarities = self.compute_similarities(anchor, positive, negative)

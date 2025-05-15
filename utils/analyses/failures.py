@@ -12,17 +12,16 @@ import pandas as pd
 from . import helpers
 from .families import Families
 
-Array = np.ndarray
 
 
 @dataclass
 class Failures:
     results: pd.DataFrame
-    triplets: Array
-    concept_embedding: Array
+    triplets: np.ndarray
+    concept_embedding: np.ndarray
     iv: str
     concept_importance: str = None
-    human_entropies: Array = None
+    human_entropies: np.ndarray = None
 
     def __post_init__(self):
         self.models = self.results.model.unique()
@@ -53,14 +52,14 @@ class Failures:
     def get_model_subset(self, family: str) -> List[str]:
         return getattr(self.families, family)
 
-    def get_correct_predictions(self, model_choices: Array) -> Array:
+    def get_correct_predictions(self, model_choices: np.ndarray) -> np.ndarray:
         """Partition triplets into failure and correctly predicted triplets."""
         correct_predictions = np.where(model_choices == 2)[0]
         if self.iv == "dimension":
             correct_predictions = self.triplets[correct_predictions]
         return correct_predictions
 
-    def get_triplets_per_bin(self, triplets: Array) -> Array:
+    def get_triplets_per_bin(self, triplets: np.ndarray) -> np.ndarray:
         if self.iv == "dimension":
             triplet_assignments = self.importance_fun(triplets)
         else:  # entropy
@@ -104,5 +103,5 @@ class Failures:
         self.n_families += 1
 
     @property
-    def family_zero_one_losses(self) -> Dict[str, Array]:
+    def family_zero_one_losses(self) -> Dict[str, np.ndarray]:
         return self.classification_errors

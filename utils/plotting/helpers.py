@@ -7,7 +7,6 @@ import pandas as pd
 import seaborn as sns
 from tueplots.constants.color import rgb
 
-Array = np.ndarray
 
 PALETTE = {
     "Image/Text": "darkmagenta",
@@ -81,7 +80,7 @@ def set_context() -> None:
     sns.set_context("paper")
 
 
-def concat_images(images: Array, top_k: int) -> Array:
+def concat_images(images: np.ndarray, top_k: int) -> np.ndarray:
     img_combination = np.concatenate([
         np.concatenate([img for img in images[:int(top_k/2)]], axis = 1),
         np.concatenate([img for img in images[int(top_k/2):]], axis = 1)], axis = 0)
@@ -89,8 +88,8 @@ def concat_images(images: Array, top_k: int) -> Array:
 
 def visualize_dimension(
     ax: Any, 
-    images: Array, 
-    dimension: Array,
+    images: np.ndarray, 
+    dimension: np.ndarray,
     d: int,
     top_k: int = 6
 ) -> None:
@@ -163,7 +162,7 @@ def plot_conceptwise_performances(
     zeroshot_concept_errors: pd.DataFrame,
     probing_concept_errors: pd.DataFrame,
     dimensions: List[int],
-    vice_embedding: Array,
+    vice_embedding: np.ndarray,
     images: List[Any],
     verbose: bool = True 
 ) -> None:

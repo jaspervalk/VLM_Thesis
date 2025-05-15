@@ -6,10 +6,10 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
-Array = np.ndarray
 
 
-def load_triplets(data_root: str, subfolder: str = "triplets", adversarial: bool = False) -> Array:
+
+def load_triplets(data_root: str, subfolder: str = "triplets", adversarial: bool = False) -> np.ndarray:
     """Load original train and test splits for THINGS from disk and concatenate them."""
     if adversarial:
         train_file_name = "train_90_adversarial.npy"
@@ -23,7 +23,7 @@ def load_triplets(data_root: str, subfolder: str = "triplets", adversarial: bool
     return triplets.astype(int)
 
 
-def partition_triplets(triplets: Array, train_objects: Array) -> Dict[str, List[int]]:
+def partition_triplets(triplets: np.ndarray, train_objects: np.ndarray) -> Dict[str, List[int]]:
     """Partition triplets into two disjoint object sets for training and validation."""
     triplet_partitioning = defaultdict(list)
     for triplet in triplets:
@@ -35,7 +35,7 @@ def partition_triplets(triplets: Array, train_objects: Array) -> Dict[str, List[
     return triplet_partitioning
 
 
-def standardize(features: Array) -> Array:
+def standardize(features: np.ndarray) -> np.ndarray:
     """Center and normalize features so that they have zero-mean and unit variance."""
     return (features - features.mean(axis=0)) / features.std(axis=0)
 

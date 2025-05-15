@@ -3,12 +3,12 @@ from dataclasses import dataclass
 import numpy as np
 from sklearn.manifold import TSNE
 
-Array = np.ndarray
+
 
 
 @dataclass
 class DimensionReduction:
-    embeddings: Array
+    embeddings: np.ndarray
 
     def compute(self):
         pass

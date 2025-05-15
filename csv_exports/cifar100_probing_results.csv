@@ -1,0 +1,4 @@
+model,probing,cross-entropy-overall,triplet-loss,locality-loss,module,family,source,reg,optim,lr,alpha,lambda,tau,sigma,bias,contrastive_batch_size,triplet_batch_size,contrastive,lmbda
+openclip_laion2b,0.5555555555555556,11.234580993652344,5.49798059463501,5.736598491668701,penultimate,CLIP,custom,l2,sgd,0.01,0.1,,0.1,0.001,False,512,256,True,0.001
+official_clip,1.0,,,,penultimate,CLIP,custom,l2,sgd,0.01,0.1,,0.1,0.001,False,512,256,True,0.001
+openclip_laion400m,0.4444444444444444,11.039066314697266,5.252663612365723,5.786404609680176,penultimate,CLIP,custom,l2,sgd,0.01,0.1,,0.1,0.001,False,512,256,True,0.001

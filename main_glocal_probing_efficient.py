@@ -33,7 +33,7 @@ def parseargs():
         parser.add_argument(*args, **kwargs)
 
     aa("--data_root", type=str, help="path/to/things")
-    aa("--imagenet_features_root", type=str, help="path/to/imagenet/features")
+    aa("--aux_features_root", type=str, help="Path to auxiliary contrastive features (e.g., CIFAR-100)")
     aa("--dataset", type=str, help="Which dataset to use", default="things")
     aa("--model", type=str)
     aa(
@@ -68,7 +68,7 @@ def parseargs():
     aa(
         "--learning_rates",
         type=float,
-        default=1e-3,
+        default=[1e-3],
         nargs="+",
         metavar="eta",
         choices=[1e-1, 1e-2, 1e-3, 1e-4, 1e-5],
@@ -83,7 +83,7 @@ def parseargs():
     aa(
         "--lmbdas",
         type=float,
-        default=1e-3,
+        default=[1e-3],
         nargs="+",
         help="Relative contribution of the l2 or identity regularization penality",
         choices=[10.0, 1.0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5],
@@ -91,14 +91,14 @@ def parseargs():
     aa(
         "--alphas",
         type=float,
-        default=1e-1,
+        default=[1e-1],
         nargs="+",
         help="Relative contribution of the contrastive loss term",
     )
     aa(
         "--taus",
         type=float,
-        default=1,
+        default=[1],
         nargs="+",
         help="temperature value for contrastive learning objective",
         choices=[1.0, 5e-1, 25e-2, 1e-1, 5e-2, 25e-3, 1e-2],
@@ -121,7 +121,7 @@ def parseargs():
     aa(
         "--contrastive_batch_sizes",
         type=int,
-        default=1024,
+        default=[1024],
         nargs="+",
         metavar="B_C",
         help="Use 64 <= B <= 4096 and power of two for running optimization process on GPU",
@@ -184,12 +184,17 @@ def get_combination(
     alphas: List[float],
     taus: List[float],
     contrastive_batch_sizes: List[int],
-) -> List[Tuple[float, float, float, float, int]]:
-    combs = []
-    combs.extend(
-        list(itertools.product(etas, lambdas, alphas, taus, contrastive_batch_sizes))
-    )
-    return combs[int(os.environ["SLURM_ARRAY_TASK_ID"])]
+) -> Tuple[float, float, float, float, int]:
+    combs = list(itertools.product(etas, lambdas, alphas, taus, contrastive_batch_sizes))
+    
+    # Try to get the SLURM ID, otherwise use the first combo
+    slurm_id = os.environ.get("SLURM_ARRAY_TASK_ID")
+    if slurm_id is not None:
+        return combs[int(slurm_id)]
+    else:
+        print("  No SLURM ID found — defaulting to first hyperparameter combo.")
+        return combs[0]
+
 
 
 def create_optimization_config(
@@ -222,9 +227,10 @@ def create_optimization_config(
     return optim_cfg
 
 
-def load_features(probing_root: str, subfolder: str = "embeddings") -> Dict[str, Array]:
+def load_features(probing_root: str, subfolder: str = "embeddings") -> Dict[str, np.ndarray]:
     """Load features for THINGS objects from disk."""
-    with open(os.path.join(probing_root, subfolder, "features.pkl"), "rb") as f:
+    with open(os.path.join(probing_root, "wrapped_features.pkl"), "rb") as f:
+
         features = pickle.load(f)
     return features
 
@@ -244,7 +250,7 @@ def get_temperature(
 
 
 def get_batches(
-    dataset: Tensor, batch_size: int, train: bool, num_workers: int = 0
+    dataset: torch.Tensor, batch_size: int, train: bool, num_workers: int = 0
 ) -> Iterator:
     batches = DataLoader(
         dataset=dataset,
@@ -288,7 +294,7 @@ def get_mean_cv_performances(cv_results: Dict[str, List[float]]) -> Dict[str, fl
 def make_results_df(
     columns: List[str],
     probing_performances: Dict[str, float],
-    ooo_choices: Array,
+    ooo_choices: np.ndarray,
     model_name: str,
     module_name: str,
     source: str,
@@ -330,6 +336,7 @@ def make_results_df(
     ]
     probing_results_current_run["triplet_batch_size"] = optim_cfg["triplet_batch_size"]
     probing_results_current_run["contrastive"] = True
+    probing_results_current_run["dataset"] = args.dataset
     return probing_results_current_run
 
 
@@ -337,7 +344,7 @@ def save_results(
     args,
     optim_cfg: Dict[str, Any],
     probing_performances: Dict[str, float],
-    ooo_choices: Array,
+    ooo_choices: np.ndarray,
 ) -> None:
     out_path = os.path.join(args.probing_root, "results")
     if not os.path.exists(out_path):
@@ -382,7 +389,8 @@ def save_results(
             "optim",
             "lr",
             "alpha",
-            "lambda",
+            "dataset",
+            "lmbda",
             "tau",
             "sigma",
             "bias",
@@ -402,36 +410,27 @@ def save_results(
         probing_results.to_pickle(os.path.join(out_path, "probing_results.pkl"))
 
 
-def get_imagenet_features(root: str, format: str, device: str) -> Tuple[Any, Any]:
-    if format == "hdf5":
-        imagenet_train_features = utils.probing.FeaturesHDF5(
-            root=root,
-            split="train",
-        )
-        imagenet_val_features = utils.probing.FeaturesHDF5(
-            root=root,
-            split="val",
-        )
-    elif format == "pt":
-        imagenet_train_features = utils.probing.FeaturesPT(
-            root=root,
-            split="train",
-            device=device,
-        )
-        imagenet_val_features = utils.probing.FeaturesPT(
-            root=root,
-            split="val",
-            device=device,
-        )
-    else:
-        raise ValueError(
-            "\nTensor datasets can only be created for features that were saved in either 'pt' or 'hdf5' format.\n"
-        )
-    return imagenet_train_features, imagenet_val_features
+def get_aux_features(root: str, device: str) -> Tuple[Any, Any]:
+    def load_pt(path):
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Feature file not found: {path}")
+        return torch.load(path, map_location=device)
+
+    train_path = os.path.join(root, "train", "features.pt")
+    val_path = os.path.join(root, "val", "features.pt")
+
+    train_features = load_pt(train_path)
+    val_features = load_pt(val_path)
+
+    return train_features, val_features
+
+
+
 
 
 def run(
-    features: Array,
+    args,
+    features: np.ndarray,
     imagenet_features_root: str,
     data_root: str,
     optim_cfg: Dict[str, Any],
@@ -440,17 +439,37 @@ def run(
     rnd_seed: int,
     num_processes: int,
     features_format: str,
-) -> Tuple[Dict[str, List[float]], Array]:
+) -> Tuple[np.ndarray, Dict[str, List[float]], Dict[str, np.ndarray], float, float]:
     """Run optimization process."""
     callbacks = get_callbacks(optim_cfg)
-    imagenet_train_features, imagenet_val_features = get_imagenet_features(
-        root=imagenet_features_root,
-        format=features_format,
+    # Avoid double-joining dataset/model
+    aux_feature_path = imagenet_features_root
+    aux_train_features, aux_val_features = get_aux_features(
+        root=aux_feature_path,
         device="cuda" if device == "gpu" else device,
     )
+
+
+
+    print(f"[DEBUG] aux_train_features: {aux_train_features}")
+    print(f"[DEBUG] aux_val_features: {aux_val_features}")
+
+
     triplets = utils.probing.load_triplets(
         data_root=data_root, adversarial=optim_cfg["adversarial"]
     )
+    # Only keep triplets within the first n_objects (e.g., 100 for CIFAR-100)
+    triplets = [t for t in triplets if all(i < n_objects for i in t)]
+    print(f"[DEBUG] Filtered triplets to match n_objects={n_objects}. Remaining: {len(triplets)}")
+
+    if isinstance(features, dict) and "penultimate" in features:
+        features = features["penultimate"]
+        if features.shape[0] > n_objects:
+            print(f"[DEBUG] Truncating features from {features.shape[0]} to {n_objects}")
+            features = features[:n_objects]
+
+
+
     things_mean = features.mean()
     things_std = features.std()
     features = (
@@ -474,10 +493,17 @@ def run(
             triplets=triplet_partitioning["train"],
             n_objects=n_objects,
         )
+        print(f"[DEBUG] triplet_partitioning keys: {triplet_partitioning.keys()}")
+        print(f"[DEBUG] Number of validation triplets: {len(triplet_partitioning['val'])}")
+        print(f"[DEBUG] Sample val triplet: {triplet_partitioning['val'][0] if triplet_partitioning['val'] else 'None'}")
+
         val_triplets = utils.probing.TripletData(
             triplets=triplet_partitioning["val"],
             n_objects=n_objects,
         )
+        print(f"[DEBUG] val_triplets object: {val_triplets}")
+        print(f"[DEBUG] len(val_triplets): {len(val_triplets)}")
+
         train_batches_things = get_batches(
             dataset=train_triplets,
             batch_size=optim_cfg["triplet_batch_size"],
@@ -485,11 +511,14 @@ def run(
             num_workers=0,
         )
         train_batches_imagenet = get_batches(
-            dataset=imagenet_train_features,
+            dataset=aux_train_features,
             batch_size=optim_cfg["contrastive_batch_size"],
             train=True,
             num_workers=num_processes,
         )
+        if len(val_triplets) == 0:
+            raise RuntimeError("No validation triplets were created. Check your triplet source and category count.")
+
         val_batches_things = get_batches(
             dataset=val_triplets,
             batch_size=optim_cfg["triplet_batch_size"],
@@ -497,9 +526,9 @@ def run(
             num_workers=0,
         )
         val_batches_imagenet = get_batches(
-            dataset=imagenet_val_features,
+            dataset=aux_val_features,
             batch_size=optim_cfg["contrastive_batch_size"],
-            train=True,
+            train=False,
             num_workers=num_processes,
         )
         train_batches = utils.probing.ZippedBatchLoader(
@@ -507,27 +536,36 @@ def run(
             batches_j=train_batches_imagenet,
             num_workers=num_processes,
         )
+        print(f"[DEBUG] type(val_batches_things): {type(val_batches_things)}")
+        print(f"[DEBUG] type(val_batches_imagenet): {type(val_batches_imagenet)}")
+        print(f"[DEBUG] val_batches_things dataset: {getattr(val_batches_things, 'dataset', None)}")
+        print(f"[DEBUG] val_batches_imagenet dataset: {getattr(val_batches_imagenet, 'dataset', None)}")
+
+
         val_batches = utils.probing.ZippedBatchLoader(
             batches_i=val_batches_things,
             batches_j=val_batches_imagenet,
             num_workers=num_processes,
         )
+        
         glocal_probe = utils.probing.GlocalFeatureProbe(
             features=features,
             optim_cfg=optim_cfg,
         )
         trainer = Trainer(
             accelerator=device,
+            devices=1,  # or "auto" if GPU
             callbacks=callbacks,
-            strategy="ddp_spawn" if device == "cpu" else None,
-            # strategy="ddp",
+            strategy=None,
             max_epochs=optim_cfg["max_epochs"],
             min_epochs=optim_cfg["min_epochs"],
-            devices=num_processes if device == "cpu" else "auto",
             enable_progress_bar=True,
             gradient_clip_val=1.0,
             gradient_clip_algorithm="norm",
-        )
+            num_sanity_val_steps=0,
+            reload_dataloaders_every_n_epochs=0,  # ✅ new line
+)
+
         trainer.fit(glocal_probe, train_batches, val_batches)
         test_performances = trainer.test(
             glocal_probe,
@@ -546,14 +584,56 @@ def run(
     ooo_choices = np.concatenate(ooo_choices)
     return ooo_choices, cv_results, transformation, things_mean, things_std
 
+# Mapping full model names to internal feature folder names
+MODEL_NAME_MAP = {
+    "OpenCLIP_RN50_yfcc15m": "official_clip",
+    "OpenCLIP_ViT-L-14_laion400m_e32": "openclip_laion400m",
+    "OpenCLIP_ViT-L-14_laion2b_s32b_b82k": "openclip_laion2b",
+}
+
 
 if __name__ == "__main__":
-    # parse arguments
     args = parseargs()
-    # seed everything for reproducibility of results
     seed_everything(args.rnd_seed, workers=True)
-    features = load_features(args.probing_root)
-    model_features = features[args.source][args.model][args.module]
+
+    # Load model features directly from aux_features_root
+    features_path = os.path.join(
+        args.probing_root,  # e.g. features/cifar100
+        args.source,        # e.g. custom
+        args.model,         # e.g. official_clip
+        args.module,        # e.g. penultimate
+        "features.pkl"
+    )
+
+    if not os.path.exists(features_path):
+        raise FileNotFoundError(f"Could not find feature file at {features_path}")
+
+    with open(features_path, "rb") as f:
+        model_features = pickle.load(f)
+
+
+    if args.dataset.startswith("cifar100"):
+        print(f"[DEBUG] Filtering model_features to top 100 entries for {args.dataset}...")
+        
+        # Log the type to understand what we are dealing with
+        print(f"[DEBUG] model_features type: {type(model_features)}")
+        
+        if isinstance(model_features, dict):
+            print(f"[DEBUG] model_features keys: {list(model_features.keys())}")
+            if args.module in model_features:
+                model_features = model_features[args.module]
+            else:
+                raise ValueError(f"Could not find expected module '{args.module}' in features.pkl. Available keys: {list(model_features.keys())}")
+
+
+        if isinstance(model_features, np.ndarray) or torch.is_tensor(model_features) or isinstance(model_features, list):
+            model_features = model_features[:100]
+        else:
+            raise TypeError(f"Cannot slice model_features of type {type(model_features)}")
+
+        args.n_objects = 100
+
+
 
     eta, lmbda, alpha, tau, contrastive_batch_size = get_combination(
         etas=args.learning_rates,
@@ -579,12 +659,11 @@ if __name__ == "__main__":
     if args.adversarial:
         out_path = os.path.join(out_path, "adversarial")
 
-    if not os.path.exists(out_path):
-        os.makedirs(out_path, exist_ok=True)
-
+    os.makedirs(out_path, exist_ok=True)
     out_file_path = os.path.join(out_path, "transform.npz")
 
     if os.path.isfile(out_file_path):
+        print(f"[INFO] Skipping: results already exist at {out_file_path}")
         print("Results already exist. Skipping...")
         print(f"Results file: {out_file_path}")
     else:
@@ -599,8 +678,9 @@ if __name__ == "__main__":
         )
 
         ooo_choices, cv_results, transform, things_mean, things_std = run(
+            args=args,
             features=model_features,
-            imagenet_features_root=args.imagenet_features_root,
+            imagenet_features_root=args.aux_features_root,
             data_root=args.data_root,
             optim_cfg=optim_cfg,
             n_objects=args.n_objects,
@@ -609,27 +689,22 @@ if __name__ == "__main__":
             num_processes=args.num_processes,
             features_format=args.features_format,
         )
+
+
         probing_performances = get_mean_cv_performances(cv_results)
-        if optim_cfg["use_bias"]:
-            with open(out_file_path, "wb") as f:
-                np.savez_compressed(
-                    file=f,
-                    weights=transform["weights"],
-                    bias=transform["bias"],
-                    mean=things_mean,
-                    std=things_std,
-                )
-        else:
-            with open(out_file_path, "wb") as f:
-                np.savez_compressed(
-                    file=f,
-                    weights=transform["weights"],
-                    mean=things_mean,
-                    std=things_std,
-                )
+        with open(out_file_path, "wb") as f:
+            np.savez_compressed(
+                file=f,
+                weights=transform["weights"],
+                bias=transform.get("bias"),
+                mean=things_mean,
+                std=things_std,
+            )
+
         save_results(
             args=args,
             optim_cfg=optim_cfg,
             probing_performances=probing_performances,
             ooo_choices=ooo_choices,
         )
+

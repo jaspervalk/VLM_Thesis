@@ -8,7 +8,6 @@ import torch.nn.functional as F
 
 from .triplet_loss import TripletLoss
 
-Tensor = torch.Tensor
 
 
 class FromScratch(pl.LightningModule):
@@ -48,14 +47,14 @@ class FromScratch(pl.LightningModule):
 
         return hook
 
-    def forward(self, things_batch: Tensor, imagenet_batch_images: Tensor) -> Tuple[Tensor, Tensor]:
+    def forward(self, things_batch: torch.Tensor, imagenet_batch_images: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         self.model(things_batch)
         things_ebmbeddings = self.activations
         imagenet_logits = self.model(imagenet_batch_images)
         return things_ebmbeddings, imagenet_logits
 
     @staticmethod
-    def convert_predictions(sim_predictions: Tensor) -> Tensor:
+    def convert_predictions(sim_predictions: torch.Tensor) -> torch.Tensor:
         """Convert similarity predictions into odd-one-out predictions."""
         first_conversion = torch.where(
             sim_predictions != 1, sim_predictions - 2, sim_predictions
@@ -65,10 +64,10 @@ class FromScratch(pl.LightningModule):
 
     @staticmethod
     def compute_similarities(
-        anchor: Tensor,
-        positive: Tensor,
-        negative: Tensor,
-    ) -> Tuple[Tensor, Tensor, Tensor]:
+        anchor: torch.Tensor,
+        positive: torch.Tensor,
+        negative: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Apply the similarity function (modeled as a dot product) to each pair in the triplet."""
         sim_i = torch.sum(anchor * positive, dim=1)
         sim_j = torch.sum(anchor * negative, dim=1)
@@ -76,9 +75,9 @@ class FromScratch(pl.LightningModule):
         return sim_i, sim_j, sim_k
 
     @staticmethod
-    def break_ties(probas: Tensor) -> Tensor:
+    def break_ties(probas: torch.Tensor) -> torch.Tensor:
         # TODO: move static methods to helpers.py?
-        return torch.tensor(
+        return torch.torch.Tensor(
             [
                 -1
                 if (
@@ -90,29 +89,29 @@ class FromScratch(pl.LightningModule):
             ]
         )
 
-    def accuracy_(self, probas: Tensor, batching: bool = True) -> Tensor:
+    def accuracy_(self, probas: torch.Tensor, batching: bool = True) -> torch.Tensor:
         choices = self.break_ties(probas)
         argmax = torch.where(choices == 0, 1., 0.)
         acc = argmax.mean() if batching else argmax.tolist()
         return acc
 
-    def choice_accuracy(self, similarities: Union[Tuple[Tensor],List[Tensor]]) -> float:
+    def choice_accuracy(self, similarities: Union[Tuple[torch.Tensor],List[torch.Tensor]]) -> float:
         probas = F.softmax(torch.stack(similarities, dim=-1), dim=1)
         choice_acc = float(self.accuracy_(probas))
         return choice_acc
 
-    def classification_accuracy(self, logits: Tensor, labels: Tensor) -> float:
+    def classification_accuracy(self, logits: torch.Tensor, labels: torch.Tensor) -> float:
         max_idcs = logits.argmax(dim=1)
         acc = (max_idcs == labels).sum().item() / len(labels)
         return acc
 
     @staticmethod
-    def unbind(embeddings: Tensor) -> List[Tensor]:
+    def unbind(embeddings: torch.Tensor) -> List[torch.Tensor]:
         return torch.unbind(
             torch.reshape(embeddings, (3, -1, embeddings.shape[-1])),
         )
 
-    def _step(self, batch: Tuple[Tensor, Tensor], batch_idx: int, calculate_acc: bool = True):
+    def _step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int, calculate_acc: bool = True):
         # Run data through model
         things_batch, imagenet_batch = batch
         things_batch_images = torch.cat([things_batch[0], things_batch[1], things_batch[2]], dim=0)  # should be [bs*3 x 3 x w x h]
@@ -149,7 +148,7 @@ class FromScratch(pl.LightningModule):
             similarity_acc,
         )
 
-    def training_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int):
+    def training_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int):
         (
             loss,
             classification_loss,
@@ -170,7 +169,7 @@ class FromScratch(pl.LightningModule):
             lr_scheduler.step()
 
 
-    def validation_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int):
+    def validation_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int):
         (
             loss,
             classification_loss,
@@ -188,7 +187,7 @@ class FromScratch(pl.LightningModule):
         self.log_dict(metrics, sync_dist=True)
         return metrics
 
-    def test_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int):
+    def test_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int):
         (
             loss,
             classification_loss,
@@ -206,7 +205,7 @@ class FromScratch(pl.LightningModule):
         self.log_dict(metrics)
         return metrics
 
-    def predict_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int):
+    def predict_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int):
         # TODO: predict imagenet, combine with "self._step"
         # Run data through model
         things_batch, imagenet_batch = batch

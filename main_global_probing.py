@@ -5,6 +5,7 @@ import warnings
 from typing import Any, Callable, Dict, Iterator, List, Tuple
 
 import numpy as np
+from torch import Tensor
 import pandas as pd
 import torch
 from pytorch_lightning import Trainer, seed_everything
@@ -17,7 +18,7 @@ from tqdm import tqdm
 import utils
 
 Array = np.ndarray
-Tensor = torch.Tensor
+# Removed redundant Tensor variable definition
 FrozenDict = Any
 
 
@@ -150,7 +151,7 @@ def create_optimization_config(args) -> Tuple[FrozenDict, FrozenDict]:
     return optim_cfg
 
 
-def load_features(probing_root: str, subfolder: str = "embeddings") -> Dict[str, Array]:
+def load_features(probing_root: str, subfolder: str = "embeddings") -> Dict[str, np.ndarray]:
     """Load features for THINGS objects from disk."""
     with open(os.path.join(probing_root, subfolder, "features.pkl"), "rb") as f:
         features = pickle.load(f)
@@ -319,7 +320,7 @@ def save_results(
 
 
 def run(
-    features: Array,
+    features: np.ndarray,
     model: str,
     module: str,
     data_root: str,
@@ -329,7 +330,7 @@ def run(
     optim_cfg: FrozenDict,
     rnd_seed: int,
     num_processes: int,
-) -> Tuple[Dict[str, List[float]], Array]:
+) -> Tuple[Dict[str, List[float]], np.ndarray]:
     """Run optimization process."""
     callbacks = get_callbacks(optim_cfg)
     triplets = utils.probing.load_triplets(data_root)

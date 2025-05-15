@@ -186,7 +186,7 @@ def create_model_config(args) -> Dict[str, Any]:
     return model_cfg
 
 
-def load_features(probing_root: str, subfolder: str = "embeddings") -> Dict[str, Array]:
+def load_features(probing_root: str, subfolder: str = "embeddings") -> Dict[str, np.ndarray]:
     """Load features for THINGS objects from disk."""
     with open(os.path.join(probing_root, subfolder, "features.pkl"), "rb") as f:
         features = pickle.load(f)
@@ -302,7 +302,7 @@ def run(
     device: str,
     rnd_seed: int,
     num_processes: int,
-) -> Tuple[Dict[str, List[float]], Array]:
+) -> Tuple[Dict[str, List[float]], np.ndarray]:
     """Run optimization process."""
     callbacks = get_callbacks(optim_cfg)
     extractor = load_extractor(model_cfg)

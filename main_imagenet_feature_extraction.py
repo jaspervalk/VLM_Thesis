@@ -142,7 +142,7 @@ def load_extractor(model_cfg: Dict[str, str]) -> Any:
     return extractor
 
 
-def save_features_sequentially(features: Tensor, out_path: str, split: str) -> None:
+def save_features_sequentially(features: torch.Tensor, out_path: str, split: str) -> None:
     """Save ImageNet features as single PyTorch tensors to disk."""
     split_path = os.path.join(out_path, split)
     if not os.path.exists(split_path):
