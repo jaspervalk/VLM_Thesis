@@ -1,7 +1,7 @@
 #!/bin/bash
 
-DATASETS=("cifar100-coarse")
-MODELS=("OpenCLIP_ViT-L-14_laion2b_s32b_b82k" "OpenCLIP_ViT-L-14_laion400m_e32" "official_clip")
+DATASETS="cifar100-coarse"
+MODELS="OpenCLIP_ViT-L-14_laion2b_s32b_b82k"
 
 for DATASET in "${DATASETS[@]}"; do
   for MODEL_NAME in "${MODELS[@]}"; do
@@ -18,13 +18,13 @@ for DATASET in "${DATASETS[@]}"; do
       --input_dim 224 \
       --n_test 100 \
       --n_reps 5 \
-      --n_classes 100 \
+      --n_classes 20 \
       --n_shot 5 \
       --sample_per_superclass \
-      --out_dir "fewshot_results" \
+      --out_dir "fewshot_results_test2" \
       --embeddings_root "." \
       --transform_type without \
-      --device cpu \
+      --device cuda \
       --rnd_seed 42
   done
 done

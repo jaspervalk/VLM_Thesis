@@ -1,3 +1,4 @@
+
 .idea
 resources
 *.txt
@@ -10,3 +11,81 @@ resources
 *.html
 *.ipynb
 .venv/
+*.pt
+*.pkl
+*.npz
+features/
+fewshot_results/
+transforms/
+*.tar.gz
+*.hdf5
+*.csv
+# IDE/editor
+.vscode/
+.mypy_cache/
+.pytest_cache/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+build/
+dist/
+
+# Virtual Envs
+env/
+venv/
+.venv/
+.python-version
+.env
+.env.*
+
+# Models/Artifacts
+*.h5
+*.ckpt
+*.log
+*.sqlite*
+*.db
+*.weights
+*.tfrecord*
+*.model
+
+# System/OS
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+Icon?
+.LSOverride
+.AppleDouble
+
+# Temp/Backup
+*.bak
+*.swp
+*.tmp
+*.out
+*.dat
+
+# Data & results
+features/
+fewshot_results*/
+transforms*/
+logs/
+lightning_logs/
+triplet_dataset/
+csv_exports/
+test_fewshot_results_reduction_*/
+test_transforms/
+
+# Model/data files
+*.tar.gz
+*.pkl
+*.npz
+*.ckpt
+*.log
+wrapped_features.pkl
+
+# If these are generated
+model_dict.json
+requirements_backup.txt
+

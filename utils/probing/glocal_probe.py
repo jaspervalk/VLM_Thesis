@@ -65,6 +65,8 @@ class GlocalProbe(pl.LightningModule):
                 data=initialization,
                 requires_grad=True,
             )
+        print(self.features.shape)  # inside GlocalProbe.__init__
+
 
     def get_initialization(self) -> torch.Tensor:
         """Initialize the transformation matrix."""
@@ -102,6 +104,7 @@ class GlocalProbe(pl.LightningModule):
         normalized_teacher_features, normalized_student_features = self.normalize_features(imagenet_features.to(torch.float))
         teacher_similarities = normalized_teacher_features @ normalized_teacher_features.T
         student_similarities = normalized_student_features @ normalized_student_features.T
+        print(imagenet_features.shape)  # inside forward()
         return batch_embeddings, teacher_similarities, student_similarities
 
 
@@ -312,8 +315,8 @@ class GlocalProbe(pl.LightningModule):
         ooo_predictions = self.convert_predictions(sim_predictions)
         return ooo_predictions
 
-    def backward(self, loss, optimizer, optimizer_idx):
-        loss.backward()
+    # def backward(self, loss, optimizer, optimizer_idx):
+    #     loss.backward()
 
     def configure_optimizers(self):
         if self.optim.lower() == "adam":
@@ -383,6 +386,7 @@ class GlocalFeatureProbe(pl.LightningModule):
                 data=initialization,
                 requires_grad=True,
             )
+
 
     def get_initialization(self) -> torch.Tensor:
         """Initialize the transformation matrix."""
@@ -537,6 +541,9 @@ class GlocalFeatureProbe(pl.LightningModule):
         self.log("triplet_loss", global_loss, on_epoch=True)
         self.log("local_loss", locality_loss, on_epoch=True)
         self.log("complexity_loss", complexity_loss, on_epoch=True)
+        print(f"[EPOCH {self.current_epoch}] Loss: {loss.item():.4f} | Acc: {acc:.4f}")
+        print(f"[DEBUG] transform_w norm: {self.transform_w.norm().item():.4f}")
+
         return loss
 
     def _save_transform_snapshot(self) -> None:
@@ -611,8 +618,8 @@ class GlocalFeatureProbe(pl.LightningModule):
         ooo_predictions = self.convert_predictions(sim_predictions)
         return ooo_predictions
 
-    def backward(self, loss, optimizer, optimizer_idx):
-        loss.backward()
+    # def backward(self, loss, optimizer, optimizer_idx):
+    #     loss.backward()
 
     def configure_optimizers(self):
         if self.optim.lower() == "adam":
@@ -630,3 +637,8 @@ class GlocalFeatureProbe(pl.LightningModule):
             optimizer, total_iters=self.max_epochs, last_epoch=-1, verbose=True
         )
         return [optimizer], [scheduler]
+    
+    def on_train_end(self):
+        self._save_transform_snapshot()
+
+

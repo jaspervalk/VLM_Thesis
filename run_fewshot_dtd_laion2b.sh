@@ -13,7 +13,7 @@ N_TEST=25
 N_REPS=5
 N_CLASSES=47
 
-# Transform settings (must match where the .npz is placed)
+# Transform settings (must match how gLocal was trained)
 OPTIM="SGD"
 ETA=0.001
 LAMBDA=0.001
@@ -31,7 +31,7 @@ OUT_DIR="fewshot_results"
 # Ensure transform is in expected location
 EXPECTED_TRANSFORM_PATH="$TRANSFORMS_ROOT/$SOURCE/$MODEL/$MODULE/sgd/$ETA/$LAMBDA/$ALPHA/$TAU/$BATCH_SIZE"
 mkdir -p "$EXPECTED_TRANSFORM_PATH"
-cp "transforms/$MODEL/visual/transform.npz" "$EXPECTED_TRANSFORM_PATH/transform.npz"
+cp "$TRANSFORMS_ROOT/$MODEL/visual/transform.npz" "$EXPECTED_TRANSFORM_PATH/transform.npz"
 
 # Run few-shot classification with gLocal transform
 echo "Running few-shot classification on $DATASET using $MODEL with gLocal transform..."

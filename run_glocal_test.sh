@@ -20,7 +20,7 @@ PROBING_ROOT="features/${dataset}"
 LOG_DIR="logs"
 AUX_FEATURES_ROOT="aux_features_root/${dataset}/${model}"
 
-echo "🚀 Test Run: $model on $dataset"
+echo "Test Run: $model on $dataset"
 python3 main_glocal_probing_efficient.py \
   --model "$model" \
   --source "$SOURCE" \

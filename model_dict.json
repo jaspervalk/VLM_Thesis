@@ -47,7 +47,7 @@
   "variant": "ViT-L-14",
   "source": "custom",
   "penultimate": {
-    "module_name": "visual.ln_post"
+    "module_name": "visual"
   }
 }
 

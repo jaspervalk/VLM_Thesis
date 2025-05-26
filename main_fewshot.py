@@ -459,6 +459,9 @@ def run(
     transform: bool = True,
     zero_shot_weights: Optional[np.ndarray] = None,
 ) -> pd.DataFrame:
+    import hashlib
+
+
     if class_id_set_test is None:
         class_id_set_test = class_id_set
         print("Using training classes for testing")
@@ -468,6 +471,7 @@ def run(
         model_cfg.modules[model_id_in_cfg],
         model_cfg.sources[model_id_in_cfg],
     )
+
     # Resolve family name
     name, model_params = model_name_to_thingsvision(model_name)
     family_name = utils.analyses.get_family_name(model_name)
@@ -509,8 +513,27 @@ def run(
     for train_features, train_targets in zip(train_features_all, train_targets_all):
         # This loops over the repetitions
         if transform:
+            transform_dict = transforms[source][model_name].transform
+            if "weights" in transform_dict:
+                W = transform_dict["weights"]
+                b = transform_dict.get("bias", None)
+            elif "W" in transform_dict:
+                W = transform_dict["W"]
+                b = transform_dict.get("b", None)
+            else:
+                raise KeyError("No weights or W key in transform dict")
+
+            print("[DEBUG] W hash:", hashlib.md5(W.tobytes()).hexdigest())
             train_features = transforms[source][model_name].transform_features(train_features)
             train_features = np.nan_to_num(train_features, nan=0.0, posinf=0.0, neginf=0.0)
+            import hashlib
+
+            print("[DEBUG] Loaded W for FS eval:")
+            print("  shape:", W.shape)
+            print("  norm:", np.linalg.norm(W))
+            print("  sum:", np.sum(W))
+            print("  hash:", hashlib.md5(W.astype(np.float32).tobytes()).hexdigest())
+
 
         regressor = get_regressor(
             train_features=train_features,
@@ -540,15 +563,40 @@ def run(
                 device=device,
                 superclass_mapping=superclass_mapping,
                 embeddings=embeddings,
-            )
+            ) 
             test_features = test_features[0]
             test_targets = test_targets[0]
             end_t_train_data = datetime.now()
             print("Time to load test data: ", (end_t_train_data - start_t_train_data))
 
             if transform:
+                print("\n[DEBUG] Applying transform for test features")
+                print(f"[DEBUG] Model: {model_name}")
+                print(f"[DEBUG] Source: {source}")
+                print(f"[DEBUG] Transform class: {type(transforms[source][model_name]).__name__}")
+
+                if hasattr(transforms[source][model_name], "root"):
+                    print(f"[DEBUG] Transform root: {transforms[source][model_name].root}")
+                if hasattr(transforms[source][model_name], "transform") and isinstance(transforms[source][model_name].transform, dict):
+                    transform_dict = transforms[source][model_name].transform
+                    W = transform_dict.get("weights", transform_dict.get("W", None))
+                    if W is not None:
+                        print(f"[DEBUG] W shape: {W.shape} | W sum: {W.sum():.4f}")
+
+
+                # Print feature stats before and after transform (add these!)
+                print("[DEBUG] Test features before transform:")
+                print("  mean:", np.mean(test_features), "std:", np.std(test_features), "norm:", np.linalg.norm(test_features))
+
+                # Apply transform
                 test_features = transforms[source][model_name].transform_features(test_features)
                 test_features = np.nan_to_num(test_features, nan=0.0, posinf=0.0, neginf=0.0)
+
+                print("[DEBUG] Test features AFTER transform:")
+                print("  mean:", np.mean(test_features), "std:", np.std(test_features), "norm:", np.linalg.norm(test_features))
+                print("[DEBUG] First 10 elements of first test feature:", test_features[0][:10])
+
+
 
         acc, _ = test_regression(
             regressors[i_rep],
@@ -600,8 +648,8 @@ if __name__ == "__main__":
     # parse arguments
     args = parseargs()
     original_dataset_name = args.dataset
-    if args.dataset == "cifar100-coarse":
-        args.dataset = "cifar100"
+    # if args.dataset == "cifar100-coarse":
+    #     args.dataset = "cifar100"
 
 
 
@@ -891,6 +939,7 @@ if __name__ == "__main__":
         results["lmbda"] = lmbda
         results["eta"] = eta
         results["optim"] = args.optim.lower()
+        print(f"[DEBUG] Saving results to: {out_file_path}")
 
         results.to_pickle(out_file_path)
 

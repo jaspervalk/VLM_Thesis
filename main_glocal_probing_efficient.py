@@ -21,6 +21,20 @@ from tqdm import tqdm
 
 import utils
 
+from torch.utils.data import Dataset
+
+class FeatureDataset(torch.utils.data.Dataset):
+    def __init__(self, features):
+        self.features = features  
+
+    def __getitem__(self, idx):
+        return self.features[idx]
+
+    def __len__(self):
+        return self.features.shape[0]
+
+
+
 Array = np.ndarray
 Tensor = torch.Tensor
 FrozenDict = Any
@@ -28,6 +42,14 @@ FrozenDict = Any
 
 def parseargs():
     parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--triplet_file",
+        type=str,
+        default=None,
+        help="Path to custom triplet .npy file to use for training (instead of default path)",
+    )
+
 
     def aa(*args, **kwargs):
         parser.add_argument(*args, **kwargs)
@@ -43,6 +65,8 @@ def parseargs():
         help="neural network module for which to learn a linear transform",
         choices=["penultimate", "logits"],
     )
+    aa("--custom_out_path", type=str, default=None, help="Override default output path for saving transform.npz")
+
     aa(
         "--source",
         type=str,
@@ -410,19 +434,26 @@ def save_results(
         probing_results.to_pickle(os.path.join(out_path, "probing_results.pkl"))
 
 
-def get_aux_features(root: str, device: str) -> Tuple[Any, Any]:
+def get_aux_features(root: str, device: str) -> Tuple[torch.utils.data.Dataset, torch.utils.data.Dataset]:
     def load_pt(path):
         if not os.path.exists(path):
             raise FileNotFoundError(f"Feature file not found: {path}")
-        return torch.load(path, map_location=device)
+        return torch.load(path, map_location="cpu")  # Force CPU
 
-    train_path = os.path.join(root, "train", "features.pt")
-    val_path = os.path.join(root, "val", "features.pt")
+    train_data = load_pt(os.path.join(root, "train", "features.pt"))
+    val_data = load_pt(os.path.join(root, "val", "features.pt"))
 
-    train_features = load_pt(train_path)
-    val_features = load_pt(val_path)
+    # Make sure we get just the tensor (e.g., train_data["features"])
+    train_features = train_data["features"]
+    val_features = val_data["features"]
 
-    return train_features, val_features
+    # Wrap into datasets
+    train_dataset = FeatureDataset(train_features)
+    val_dataset = FeatureDataset(val_features)
+
+    return train_dataset, val_dataset
+
+
 
 
 
@@ -441,6 +472,8 @@ def run(
     features_format: str,
 ) -> Tuple[np.ndarray, Dict[str, List[float]], Dict[str, np.ndarray], float, float]:
     """Run optimization process."""
+
+
     callbacks = get_callbacks(optim_cfg)
     # Avoid double-joining dataset/model
     aux_feature_path = imagenet_features_root
@@ -455,9 +488,17 @@ def run(
     print(f"[DEBUG] aux_val_features: {aux_val_features}")
 
 
-    triplets = utils.probing.load_triplets(
-        data_root=data_root, adversarial=optim_cfg["adversarial"]
-    )
+    if hasattr(args, "triplet_file") and args.triplet_file is not None:
+        print(f"[INFO] Loading custom triplets from {args.triplet_file}")
+        triplets = np.load(args.triplet_file)
+    else:
+        triplets = utils.probing.load_triplets(
+            data_root=data_root, adversarial=optim_cfg["adversarial"]
+        )
+    
+    print(f"[DEBUG] Triplet shape: {triplets.shape}")
+    print(f"[DEBUG] First 5 triplets: {triplets[:5]}")
+
     # Only keep triplets within the first n_objects (e.g., 100 for CIFAR-100)
     triplets = [t for t in triplets if all(i < n_objects for i in t)]
     print(f"[DEBUG] Filtered triplets to match n_objects={n_objects}. Remaining: {len(triplets)}")
@@ -556,14 +597,14 @@ def run(
             accelerator=device,
             devices=1,  # or "auto" if GPU
             callbacks=callbacks,
-            strategy=None,
+            # strategy=None,
             max_epochs=optim_cfg["max_epochs"],
             min_epochs=optim_cfg["min_epochs"],
             enable_progress_bar=True,
             gradient_clip_val=1.0,
             gradient_clip_algorithm="norm",
             num_sanity_val_steps=0,
-            reload_dataloaders_every_n_epochs=0,  # ✅ new line
+            reload_dataloaders_every_n_epochs=0,  # new line
 )
 
         trainer.fit(glocal_probe, train_batches, val_batches)
@@ -587,6 +628,7 @@ def run(
 # Mapping full model names to internal feature folder names
 MODEL_NAME_MAP = {
     "OpenCLIP_RN50_yfcc15m": "official_clip",
+    "CLIP_ViT-L-14_WIT": "official_clip",
     "OpenCLIP_ViT-L-14_laion400m_e32": "openclip_laion400m",
     "OpenCLIP_ViT-L-14_laion2b_s32b_b82k": "openclip_laion2b",
 }
@@ -643,21 +685,33 @@ if __name__ == "__main__":
         contrastive_batch_sizes=args.contrastive_batch_sizes,
     )
 
-    out_path = os.path.join(
-        args.probing_root,
-        "results",
-        args.source,
-        args.model,
-        args.module,
-        args.optim.lower(),
-        str(eta),
-        str(lmbda),
-        str(alpha),
-        str(tau),
-        str(contrastive_batch_size),
-    )
+    if args.custom_out_path:
+        out_path = args.custom_out_path
+    else:
+        out_path = os.path.join(
+            args.probing_root,
+            "results",
+            args.source,
+            args.model,
+            args.module,
+            args.optim.lower(),
+            str(eta),
+            str(lmbda),
+            str(alpha),
+            str(tau),
+            str(contrastive_batch_size),
+        )
+
+        # Append tag for triplet subset if provided
+        if args.triplet_file:
+            triplet_tag = os.path.basename(args.triplet_file).replace(".npy", "")
+            out_path = os.path.join(out_path, f"triplets_{triplet_tag}")
+
+
+    
     if args.adversarial:
         out_path = os.path.join(out_path, "adversarial")
+    print(f"[DEBUG] Final output path: {out_path}")
 
     os.makedirs(out_path, exist_ok=True)
     out_file_path = os.path.join(out_path, "transform.npz")
@@ -692,6 +746,23 @@ if __name__ == "__main__":
 
 
         probing_performances = get_mean_cv_performances(cv_results)
+
+        import hashlib
+
+        W = transform["weights"]
+        print("\n[DEBUG] Transform Inspection:")
+        print("W shape:", W.shape)
+        print("W norm:", np.linalg.norm(W))
+        print("W sum:", W.sum())
+        print("W hash:", hashlib.md5(W.tobytes()).hexdigest())
+
+        if np.allclose(W, np.eye(W.shape[0]), atol=1e-2):
+            print("W is close to identity.")
+        elif np.allclose(W, 0, atol=1e-2):
+            print("W is close to zero.")
+        else:
+            print("W looks non-trivial.")
+
         with open(out_file_path, "wb") as f:
             np.savez_compressed(
                 file=f,
