@@ -97,3 +97,6 @@ data/
 features/
 triplet_dataset/
 
+cifar-100-python/
+cifar-100-python.tar.gz
+
