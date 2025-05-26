@@ -89,3 +89,11 @@ wrapped_features.pkl
 model_dict.json
 requirements_backup.txt
 
+# Ignore large data/model files and folders
+aux_features_root/
+cifar-100-python/
+cifar-100-python.tar.gz
+data/
+features/
+triplet_dataset/
+
