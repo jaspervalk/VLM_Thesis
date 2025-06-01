@@ -1,7 +1,7 @@
 #!/bin/bash
 
 
-TRIPLET_FILE="triplet_dataset/trainset_01pct.npy"
+TRIPLET_FILE="triplet_dataset/trainset_10pct.npy"
 TRIPLET_NAME=$(basename "$TRIPLET_FILE" .npy)
 MODEL="OpenCLIP_ViT-L-14_laion400m_e32"
 SOURCE="custom"
@@ -29,7 +29,7 @@ FEATURES_FORMAT="pt"
 NUM_PROCESSES=4
 RND_SEED=42
 
-LOG_DIR="transforms2/trainset_01pct/400m"  # NEW location for everything related to this run
+LOG_DIR="transforms2/trainset_10pct/400m"  # change per run, dont forget plz
 mkdir -p "$LOG_DIR"
 
 

@@ -1,6 +1,6 @@
 import numpy as np
 
-npz_path = "transforms2/trainset_0_01pct/transform.npz"
+npz_path = "transforms2/trainset_01pct/custom/OpenCLIP_ViT-L-14_laion2b_s32b_b82k/penultimate/sgd/0.001/0.001/0.1/1.0/1024/transform.npz"
 transform = np.load(npz_path, allow_pickle=True)
 
 print(f"\nFile: {npz_path}")

@@ -763,14 +763,23 @@ if __name__ == "__main__":
         else:
             print("W looks non-trivial.")
 
+        weights = transform["weights"]
+        bias = transform.get("bias")
+
+        if bias is None or not (isinstance(bias, np.ndarray) and bias.shape == (weights.shape[0],)):
+            print(f"[WARNING] Replacing bias {type(bias)} shape {getattr(bias, 'shape', None)} with zeros.")
+            bias = np.zeros((weights.shape[0],), dtype=np.float32)
+
+
         with open(out_file_path, "wb") as f:
             np.savez_compressed(
                 file=f,
-                weights=transform["weights"],
-                bias=transform.get("bias"),
+                weights=weights,
+                bias=bias,
                 mean=things_mean,
                 std=things_std,
             )
+
 
         save_results(
             args=args,

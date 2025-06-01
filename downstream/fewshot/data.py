@@ -3,6 +3,9 @@ import torch
 import numpy as np
 from typing import Optional, Any, Tuple
 from torchvision import datasets
+from torchvision.datasets.folder import default_loader
+
+
 from torchvision.datasets import CIFAR100, DTD, SUN397, ImageNet
 
 Array = np.ndarray
@@ -80,6 +83,7 @@ def load_dataset(
             transform=transform,
         )
 
+
     elif name == "SUN397":
         dataset_class = SUN397
         if embeddings is not None:
@@ -121,8 +125,18 @@ def load_dataset(
     else:
         raise ValueError(f"\nUnknown dataset: {name}\n")
 
-    print(f"[DEBUG] Loaded {name} with {len(dataset)} samples. Unique labels: {set(dataset.targets)}")
+    if hasattr(dataset, 'targets'):
+        targets = dataset.targets
+    elif hasattr(dataset, 'labels'):
+        targets = dataset.labels
+    elif hasattr(dataset, 'samples'):
+        targets = [s[1] for s in dataset.samples]
+    else:
+        targets = []
+    print(f"[DEBUG] Loaded {name} with {len(dataset)} samples. Unique labels: {set(targets)}")
     return dataset
+
+
 
 
 

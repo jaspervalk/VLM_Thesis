@@ -20,6 +20,9 @@ from main_model_sim_eval import get_module_names
 from utils.evaluation.transforms import GlobalTransform, GlocalTransform
 from utils.probing.helpers import model_name_to_thingsvision
 
+
+print("[DEBUG] Current working directory:", os.getcwd())
+
 Array = np.ndarray
 Tensor = torch.Tensor
 FrozenDict = Any
@@ -261,13 +264,20 @@ def get_features_targets(
     dataset_is_embedded = is_embedding_source(source) or embeddings is not None
 
     if dataset_is_embedded:
+        if data_cfg.name == "dtd":
+            print("\n[DEBUG] --- DTD LOAD_DATASET CALL ---")
+            print(f"Calling load_dataset with: name={data_cfg.name}, data_dir={data_cfg.root}, train={train}")
         print(f"Using pre-loaded embeddings for {model_name}")
+
         dataset = load_dataset(
             name=data_cfg.name,
             data_dir=data_cfg.root,
             train=train,
             embeddings=embeddings,
         )
+        if data_cfg.name == "dtd":
+            print(f"[DEBUG] dataset.root after loading: {getattr(dataset, 'root', None)}")
+
     else:
         complete_model_name = model_name
         if model_params is not None:

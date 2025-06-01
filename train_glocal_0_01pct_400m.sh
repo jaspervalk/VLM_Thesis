@@ -1,24 +1,18 @@
 #!/bin/bash
 
-# === Description ===
-# This script trains a test transform on 0.01% (~410) triplets using OpenCLIP on CIFAR100,
-# and saves it under a custom path to avoid accidental overwrite or caching.
 
-# === Triplet Setup ===
 TRIPLET_FILE="triplet_dataset/trainset_0_01pct.npy"
-TRIPLET_NAME=$(basename "$TRIPLET_FILE" .npy)_testtransform
-
-# === Model and Data Info ===
-MODEL="OpenCLIP_ViT-L-14_laion2b_s32b_b82k"
+TRIPLET_NAME=$(basename "$TRIPLET_FILE" .npy)
+MODEL="OpenCLIP_ViT-L-14_laion400m_e32"
 SOURCE="custom"
 MODULE="penultimate"
-
 DATASET="things"
-DATA_ROOT="./triplet_dataset"  # Root containing triplets
-PROBING_ROOT="./features/things"  # Main probing output location
-AUX_FEATURES_ROOT="./features/things/custom/$MODEL/$MODULE"
 
-# === Hyperparams ===
+DATA_ROOT="./data"
+AUX_FEATURES_ROOT="./features/things/custom/$MODEL/$MODULE"
+PROBING_ROOT="./features/things"
+DEVICE="gpu"  
+
 OPTIM="SGD"
 ETA=0.001
 LAMBDA=0.001
@@ -28,25 +22,16 @@ BATCH_SIZE=1024
 TRIPLET_BATCH_SIZE=256
 EPOCHS=100
 BURNIN=20
-PATIENCE=15
-SIGMA=0.001
+PATIENCE=100
+SIGMA=0.1
 
-# === Misc ===
 FEATURES_FORMAT="pt"
 NUM_PROCESSES=4
 RND_SEED=42
-DEVICE="gpu"
 
-# === Custom Output Path to avoid overwrite ===
-LOG_DIR="./transforms_check/logs/$TRIPLET_NAME"
-OUT_DIR="./test_transforms/$TRIPLET_NAME"
-
+LOG_DIR="transforms2/trainset_0_01pct/400m"  # NEW location for everything related to this run
 mkdir -p "$LOG_DIR"
-mkdir -p "$OUT_DIR"
 
-# === Launch training ===
-echo "Training test transform for $MODEL on $DATASET using $TRIPLET_FILE..."
-echo "Output path will be: $OUT_DIR"
 
 python main_glocal_probing_efficient.py \
   --data_root "$DATA_ROOT" \
@@ -71,6 +56,12 @@ python main_glocal_probing_efficient.py \
   --num_processes "$NUM_PROCESSES" \
   --probing_root "$PROBING_ROOT" \
   --log_dir "$LOG_DIR" \
+  --custom_out_path "$LOG_DIR" \
   --optim "$OPTIM" \
   --rnd_seed "$RND_SEED" \
-  --custom_out_path "$OUT_DIR"
+  --use_bias
+
+echo ""
+echo "Finished! Your new transform should be in:"
+echo "  $LOG_DIR"
+echo "  (Check for transform.npz in subfolders, should have 'weights', 'bias', 'mean', 'std')"

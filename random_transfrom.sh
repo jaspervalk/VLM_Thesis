@@ -1,38 +1,41 @@
 #!/bin/bash
 
-# 
-MODEL="OpenCLIP_ViT-L-14_laion2b_s32b_b82k"
+MODEL="OpenCLIP_ViT-L-14_laion400m_e32"
 SOURCE="custom"
 MODULE="penultimate"
 DATASET="cifar100"
 INPUT_DIM=224
-
-
 N_SHOT=5
 N_TEST=25
 N_REPS=5
 N_CLASSES=100
-
-
-OPTIM="SGD"
+OPTIM="sgd"
 ETA=0.001
 LAMBDA=0.001
 ALPHA=0.1
 TAU=1.0
 BATCH_SIZE=1024
-
-# 
 DATA_ROOT="./data"
 EMBEDDINGS_ROOT="./features"
 THINGS_EMBEDDINGS="./features/things/embeddings/model_features_per_source.pkl"
-TRANSFORM_BASE="./transforms_reduction/trainset_50pct"
-TRANSFORMS_ROOT="$TRANSFORM_BASE"  # This tells main_fewshot.py where to find the npz
 
+# Use the 0_01pct/400m directory
+TRANSFORMS_ROOT="transforms2/trainset_0_01pct/400m"
+OUT_DIR="fewshot_results_randomW_0_01pct_400m"
 
-OUT_DIR="fewshot_results_reduction_50pct"
- 
+EXPECTED_TRANSFORM_DIR="$TRANSFORMS_ROOT/$SOURCE/$MODEL/$MODULE/$OPTIM/$ETA/$LAMBDA/$ALPHA/$TAU/$BATCH_SIZE"
 
-echo "Running 5-shot classification on $DATASET with $MODEL using gLocal (50% triplets)..."
+# Make sure random_transform.npz exists
+if [ ! -f "$TRANSFORMS_ROOT/random_transform.npz" ]; then
+  echo "Error: $TRANSFORMS_ROOT/random_transform.npz does not exist! Exiting."
+  exit 1
+fi
+
+mkdir -p "$EXPECTED_TRANSFORM_DIR"
+cp "$TRANSFORMS_ROOT/random_transform.npz" "$EXPECTED_TRANSFORM_DIR/transform.npz"
+echo "Using RANDOM transform from: $EXPECTED_TRANSFORM_DIR/transform.npz"
+
+echo "Running few-shot with RANDOM W transform on $DATASET..."
 
 python main_fewshot.py \
   --data_root "$DATA_ROOT" \

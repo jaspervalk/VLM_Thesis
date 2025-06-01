@@ -26,7 +26,7 @@ DATA_ROOT="./data"
 EMBEDDINGS_ROOT="./features"
 TRANSFORMS_ROOT="./transforms"
 THINGS_EMBEDDINGS="./features/things/embeddings/model_features_per_source.pkl"
-OUT_DIR="fewshot_results"
+OUT_DIR="fewshot_results20"
 
 # Ensure transform is in expected location
 EXPECTED_TRANSFORM_PATH="$TRANSFORMS_ROOT/$SOURCE/$MODEL/$MODULE/sgd/$ETA/$LAMBDA/$ALPHA/$TAU/$BATCH_SIZE"
@@ -58,5 +58,7 @@ python main_fewshot.py \
   --contrastive_batch_sizes "$BATCH_SIZE" \
   --transforms_root "$TRANSFORMS_ROOT" \
   --things_embeddings_path "$THINGS_EMBEDDINGS" \
-  --device cpu \
+  --device cuda \
   --rnd_seed 42
+
+
