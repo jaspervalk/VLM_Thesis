@@ -11,7 +11,7 @@
 
 ## Environment setup and dependencies
 
-We recommend to create a virtual environment (e.g., human_alignment), including all dependencies, via `conda`
+Create env with conda:
 
 ```bash
 $ conda env create --prefix /path/to/conda/envs/human_alignment --file envs/environment.yml
